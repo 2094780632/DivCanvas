@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>专业画板 - 保存/加载 | 图层变换 | 完整存储结构</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: #eef2f8;
+            font-family: 'Segoe UI', 'Roboto', system-ui, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .app-wrapper {
+            max-width: 1650px;
+            width: 100%;
+            background: transparent;
+        }
+
+        .workspace {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            padding: 0;
+        }
+
+        /* 画板区域 */
+        .draw-area {
+            flex: 2.2;
+            min-width: 520px;
+            background: transparent;
+        }
+
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 16px;
+            background: rgba(255,255,255,0.7);
+            padding: 6px 14px;
+            border-radius: 60px;
+            backdrop-filter: blur(4px);
+        }
+
+        .tool-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .tool-btn {
+            background: transparent;
+            border: none;
+            padding: 5px 14px;
+            border-radius: 32px;
+            font-weight: 500;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: 0.2s;
+            color: #1e293b;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .tool-btn.active {
+            background: #2c5f8a;
+            color: white;
+        }
+
+        .tool-btn:hover:not(.active) {
+            background: #e2e8f0;
+        }
+
+        input[type="color"] {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: white;
+            cursor: pointer;
+            border-radius: 50%;
+            padding: 2px;
+        }
+
+        .separator {
+            width: 1px;
+            height: 26px;
+            background: #cbd5e1;
+        }
+
+        .canvas-container {
+            background: transparent;
+            position: relative;
+        }
+
+        #canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            background: white;
+            border: 1px solid #cfdfed;
+            margin: 0 auto;
+            cursor: crosshair;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            border: 1px solid #cbd5e1;
+            padding: 5px 16px;
+            border-radius: 36px;
+            font-weight: 500;
+            background: white;
+            cursor: pointer;
+            transition: 0.2s;
+            font-size: 0.8rem;
+        }
+
+        .btn-primary {
+            background: #2c5f8a;
+            color: white;
+            border: none;
+        }
+
+        /* 图层面板 */
+        .layers-panel {
+            flex: 0.9;
+            min-width: 260px;
+            background: #ffffffdd;
+            backdrop-filter: blur(8px);
+            border-radius: 24px;
+            padding: 14px;
+            border: 1px solid #e2edf7;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .layers-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #cbd5e1;
+            padding-bottom: 6px;
+        }
+
+        .layer-list {
+            max-height: 280px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .layer-item {
+            background: #f8fafc;
+            border-radius: 18px;
+            padding: 8px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+            font-size: 0.75rem;
+        }
+
+        .layer-item.selected {
+            background: #e0f2fe;
+            border-color: #7aa9c4;
+        }
+
+        .layer-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .transform-panel {
+            background: #f1f5f9;
+            border-radius: 18px;
+            padding: 10px;
+            margin-top: 6px;
+        }
+
+        .transform-control {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .transform-control input {
+            width: 60px;
+            border-radius: 20px;
+            border: 1px solid #cbd5e1;
+            padding: 3px 6px;
+            font-size: 0.7rem;
+        }
+
+        .small-btn {
+            background: white;
+            border: 1px solid #cbd5e1;
+            border-radius: 30px;
+            padding: 3px 10px;
+            font-size: 0.7rem;
+            cursor: pointer;
+        }
+
+        /* 代码区 */
+        .code-area {
+            flex: 1.2;
+            min-width: 350px;
+            background: #0f172a;
+            border-radius: 24px;
+            padding: 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .code-box {
+            background: #0a0f1c;
+            border-radius: 18px;
+            padding: 12px;
+            overflow: auto;
+            max-height: 460px;
+        }
+
+        pre {
+            margin: 0;
+            font-family: monospace;
+            font-size: 10px;
+            white-space: pre-wrap;
+            color: #cbd5e6;
+        }
+
+        .copy-btn {
+            background: #334155;
+            padding: 4px 12px;
+            border-radius: 30px;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }
+
+        .badge-note {
+            font-size: 0.65rem;
+            background: #1e293b;
+            padding: 6px 10px;
+            border-radius: 18px;
+            color: #cbd5e6;
+            text-align: center;
+        }
+        
+        .file-input-label {
+            background: #334155;
+            padding: 5px 12px;
+            border-radius: 30px;
+            color: white;
+            font-size: 0.7rem;
+            cursor: pointer;
+            display: inline-block;
+        }
+        input[type="file"] {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div class="app-wrapper">
+    <div class="workspace">
+        <!-- 绘图区 -->
+        <div class="draw-area">
+            <div class="toolbar">
+                <div class="tool-group">
+                    <button class="tool-btn" id="tool-rect">📐 矩形</button>
+                    <button class="tool-btn" id="tool-circle">⚪ 圆形</button>
+                    <button class="tool-btn" id="tool-free">✏️ 画笔</button>
+                </div>
+                <div class="separator"></div>
+                <div class="tool-group">
+                    <span>🎨 填充</span>
+                    <input type="color" id="fillColorPicker" value="#ffb3da">
+                </div>
+                <div class="tool-group">
+                    <span>🖌️ 边框</span>
+                    <input type="color" id="borderColorPicker" value="#ef96c2">
+                </div>
+                <div class="tool-group">
+                    <span>📏 宽度</span>
+                    <input type="number" id="borderWidthInput" value="3" min="0" max="10" style="width: 52px;">
+                </div>
+                <div class="tool-group">
+                    <span>🔘 Shift+拖拽 → 正形</span>
+                </div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="canvas" width="780" height="520" style="width:100%; height:auto; max-width:780px; aspect-ratio:780/520; border:1px solid #ccc;"></canvas>
+            </div>
+            <div class="action-buttons">
+                <button class="btn" id="clearCanvasBtn">🗑️ 清空全部</button>
+                <button class="btn btn-primary" id="generateDivCodeBtn">✨ 生成纯DIV代码</button>
+                <button class="btn" id="exportImageBtn">📸 保存图片</button>
+                <button class="btn" id="saveProjectBtn">💾 保存项目(.json)</button>
+                <label class="file-input-label" id="loadLabel">📂 加载项目</label>
+                <input type="file" id="loadFileInput" accept=".json">
+            </div>
+            <div class="badge-note" style="margin-top: 10px; background:#eef2ff; color:#1e293b;">
+                💾 存储结构: 包含版本、画板尺寸、图层数组(含类型、坐标、尺寸、颜色、边框、旋转角度、画笔路径点等)
+            </div>
+        </div>
+
+        <!-- 图层管理 + 变换编辑 -->
+        <div class="layers-panel">
+            <div class="layers-header">
+                <h4 style="margin:0;">🎚️ 图层 & 变换</h4>
+                <div style="display: flex; gap: 5px;">
+                    <button class="small-btn" id="undoBtn" title="撤销">↩️</button>
+                    <button class="small-btn" id="redoBtn" title="重做">↪️</button>
+                </div>
+            </div>
+            <div class="layer-list" id="layerListContainer">
+                <div style="padding: 10px; text-align:center;">暂无图层</div>
+            </div>
+            <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+                <button id="deleteLayerBtn" class="small-btn" style="background:#fee2e2;">删除选中</button>
+                <button id="moveUpLayerBtn" class="small-btn">上移</button>
+                <button id="moveDownLayerBtn" class="small-btn">下移</button>
+            </div>
+            
+            <!-- 变换编辑面板 -->
+            <div class="transform-panel" id="transformPanel" style="display: none;">
+                <div style="font-size:0.7rem; font-weight:600; margin-bottom:6px;">✏️ 变换 (选中图层)</div>
+                <div class="transform-control">
+                    <span>X:</span> <input type="number" id="posX" step="1">
+                    <span>Y:</span> <input type="number" id="posY" step="1">
+                </div>
+                <div class="transform-control">
+                    <span>宽:</span> <input type="number" id="scaleW" step="1" min="2">
+                    <span>高:</span> <input type="number" id="scaleH" step="1" min="2">
+                </div>
+                <div class="transform-control">
+                    <span>旋转:</span> <input type="number" id="rotateDeg" step="1" value="0"> °
+                    <button class="small-btn" id="applyTransformBtn">应用</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 代码区 -->
+        <div class="code-area">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight: 600;">📦 纯DIV输出</span>
+                <button class="copy-btn" id="copyFinalCodeBtn">📋 复制代码</button>
+            </div>
+            <div class="code-box">
+                <pre id="generatedCodePreview">// 支持保存/加载项目 (完整存储结构)
+// 绘制图形后点击 💾 保存项目，下次点击 📂 加载项目恢复</pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ========== 全局数据 ==========
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 780;
+        canvas.height = 520;
+
+        // 存储结构: 版本1.0, 包含画板尺寸，图层数组
+        let shapes = [];           // 每个shape: { id, type, x, y, w, h, rotation, fillColor, borderColor, borderWidth, points(仅free) }
+        let selectedLayerId = null;
+        
+        // 历史记录 (撤销/重做)
+        let historyStack = [];
+        let historyIndex = -1;
+        const MAX_HISTORY = 50;
+        
+        // 工具状态
+        let currentTool = 'rect';
+        let fillColor = '#ffb3da';
+        let borderColor = '#ef96c2';
+        let borderWidth = 3;
+        let shiftPressed = false;
+        
+        // 绘图临时变量
+        let isDrawing = false;
+        let startX = 0, startY = 0;
+        let currentPathPoints = [];
+        
+        // DOM 元素绑定
+        const rectBtn = document.getElementById('tool-rect');
+        const circleBtn = document.getElementById('tool-circle');
+        const freeBtn = document.getElementById('tool-free');
+        const fillPicker = document.getElementById('fillColorPicker');
+        const borderPicker = document.getElementById('borderColorPicker');
+        const borderWidthInput = document.getElementById('borderWidthInput');
+        const clearBtn = document.getElementById('clearCanvasBtn');
+        const generateBtn = document.getElementById('generateDivCodeBtn');
+        const copyBtn = document.getElementById('copyFinalCodeBtn');
+        const exportImgBtn = document.getElementById('exportImageBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
+        const deleteLayerBtn = document.getElementById('deleteLayerBtn');
+        const moveUpBtn = document.getElementById('moveUpLayerBtn');
+        const moveDownBtn = document.getElementById('moveDownLayerBtn');
+        const transformPanel = document.getElementById('transformPanel');
+        const posXInput = document.getElementById('posX');
+        const posYInput = document.getElementById('posY');
+        const scaleWInput = document.getElementById('scaleW');
+        const scaleHInput = document.getElementById('scaleH');
+        const rotateDegInput = document.getElementById('rotateDeg');
+        const applyTransformBtn = document.getElementById('applyTransformBtn');
+        const saveProjectBtn = document.getElementById('saveProjectBtn');
+        const loadFileInput = document.getElementById('loadFileInput');
+
+        // ========== 存储结构定义 & 保存/加载 ==========
+        // 构建当前项目的存储对象
+        function buildStorageData() {
+            return {
+                version: "1.0",
+                canvasWidth: canvas.width,
+                canvasHeight: canvas.height,
+                timestamp: Date.now(),
+                layers: shapes.map(shape => {
+                    const base = {
+                        id: shape.id,
+                        type: shape.type,
+                        fillColor: shape.fillColor,
+                        borderColor: shape.borderColor,
+                        borderWidth: shape.borderWidth,
+                        rotation: shape.rotation || 0
+                    };
+                    if (shape.type === 'rect' || shape.type === 'circle') {
+                        base.x = shape.x;
+                        base.y = shape.y;
+                        base.w = shape.w;
+                        base.h = shape.h;
+                    } else if (shape.type === 'free') {
+                        base.points = shape.points; // 存储路径点数组
+                        base.borderColor = shape.borderColor;
+                        base.borderWidth = shape.borderWidth;
+                    }
+                    return base;
+                })
+            };
+        }
+        
+        // 从存储数据恢复shapes
+        function restoreFromData(data) {
+            if (!data || !data.layers) return false;
+            const newShapes = [];
+            for (let item of data.layers) {
+                if (item.type === 'rect') {
+                    newShapes.push({
+                        id: item.id || Date.now() + Math.random() * 10000,
+                        type: 'rect',
+                        x: item.x,
+                        y: item.y,
+                        w: item.w,
+                        h: item.h,
+                        rotation: item.rotation || 0,
+                        fillColor: item.fillColor || '#ffb3da',
+                        borderColor: item.borderColor || '#ef96c2',
+                        borderWidth: item.borderWidth || 3
+                    });
+                } else if (item.type === 'circle') {
+                    newShapes.push({
+                        id: item.id || Date.now() + Math.random() * 10000,
+                        type: 'circle',
+                        x: item.x,
+                        y: item.y,
+                        w: item.w,
+                        h: item.h,
+                        rotation: item.rotation || 0,
+                        fillColor: item.fillColor || '#ffb3da',
+                        borderColor: item.borderColor || '#ef96c2',
+                        borderWidth: item.borderWidth || 3
+                    });
+                } else if (item.type === 'free' && item.points) {
+                    newShapes.push({
+                        id: item.id || Date.now() + Math.random() * 10000,
+                        type: 'free',
+                        points: item.points,
+                        borderColor: item.borderColor || '#ef96c2',
+                        borderWidth: item.borderWidth || 3,
+                        fillColor: 'transparent',
+                        rotation: 0
+                    });
+                }
+            }
+            shapes = newShapes;
+            selectedLayerId = shapes.length > 0 ? shapes[0].id : null;
+            return true;
+        }
+        
+        // 保存项目到文件
+        function saveProjectToFile() {
+            const storage = buildStorageData();
+            const jsonStr = JSON.stringify(storage, null, 2);
+            const blob = new Blob([jsonStr], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `canvas_project_${new Date().toISOString().slice(0,19)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        // 加载项目文件
+        function loadProjectFromFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (restoreFromData(data)) {
+                        // 重置历史记录
+                        historyStack = [];
+                        historyIndex = -1;
+                        recordAndRefresh(); // 保存初始状态
+                        selectedLayerId = shapes.length > 0 ? shapes[0].id : null;
+                        redrawCanvas();
+                        renderLayerList();
+                        updateTransformPanel();
+                    } else {
+                        alert("无效的项目文件");
+                    }
+                } catch(err) {
+                    alert("解析失败: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        loadFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                loadProjectFromFile(e.target.files[0]);
+                e.target.value = '';
+            }
+        });
+        saveProjectBtn.addEventListener('click', saveProjectToFile);
+        
+        // ========== 历史记录 ==========
+        function saveToHistory() {
+            const copy = JSON.parse(JSON.stringify(shapes));
+            if (historyIndex < historyStack.length - 1) {
+                historyStack = historyStack.slice(0, historyIndex + 1);
+            }
+            historyStack.push(copy);
+            if (historyStack.length > MAX_HISTORY) historyStack.shift();
+            historyIndex = historyStack.length - 1;
+        }
+        
+        function recordAndRefresh() {
+            saveToHistory();
+            redrawCanvas();
+            renderLayerList();
+            updateTransformPanel();
+        }
+        
+        function undo() {
+            if (historyIndex > 0) {
+                historyIndex--;
+                shapes = JSON.parse(JSON.stringify(historyStack[historyIndex]));
+                if (selectedLayerId && !shapes.find(s => s.id === selectedLayerId)) selectedLayerId = shapes.length ? shapes[0]?.id : null;
+                redrawCanvas();
+                renderLayerList();
+                updateTransformPanel();
+            }
+        }
+        
+        function redo() {
+            if (historyIndex < historyStack.length - 1) {
+                historyIndex++;
+                shapes = JSON.parse(JSON.stringify(historyStack[historyIndex]));
+                if (selectedLayerId && !shapes.find(s => s.id === selectedLayerId)) selectedLayerId = shapes.length ? shapes[0]?.id : null;
+                redrawCanvas();
+                renderLayerList();
+                updateTransformPanel();
+            }
+        }
+        
+        // 添加图形
+        function addShape(shapeData) {
+            const newId = Date.now() + Math.random() * 10000 + shapes.length;
+            const newShape = { ...shapeData, id: newId, rotation: shapeData.rotation || 0 };
+            shapes.push(newShape);
+            recordAndRefresh();
+            selectedLayerId = newId;
+            renderLayerList();
+            updateTransformPanel();
+        }
+        
+        // 变换逻辑
+        function updateTransformPanel() {
+            if (!selectedLayerId) {
+                transformPanel.style.display = 'none';
+                return;
+            }
+            const layer = shapes.find(s => s.id === selectedLayerId);
+            if (!layer || layer.type === 'free') {
+                transformPanel.style.display = 'none';
+                return;
+            }
+            transformPanel.style.display = 'block';
+            posXInput.value = Math.round(layer.x);
+            posYInput.value = Math.round(layer.y);
+            scaleWInput.value = Math.round(layer.w);
+            scaleHInput.value = Math.round(layer.h);
+            rotateDegInput.value = Math.round(layer.rotation || 0);
+        }
+        
+        function applyTransformToSelected() {
+            if (!selectedLayerId) return;
+            const layer = shapes.find(s => s.id === selectedLayerId);
+            if (!layer || layer.type === 'free') return;
+            const newX = parseFloat(posXInput.value);
+            const newY = parseFloat(posYInput.value);
+            const newW = Math.max(2, parseFloat(scaleWInput.value));
+            const newH = Math.max(2, parseFloat(scaleHInput.value));
+            const newRot = parseFloat(rotateDegInput.value) % 360;
+            if (isNaN(newX) || isNaN(newY) || isNaN(newW) || isNaN(newH)) return;
+            layer.x = newX;
+            layer.y = newY;
+            layer.w = newW;
+            layer.h = newH;
+            layer.rotation = newRot;
+            recordAndRefresh();
+        }
+        
+        function deleteSelectedLayer() {
+            if (selectedLayerId) {
+                const idx = shapes.findIndex(s => s.id === selectedLayerId);
+                if (idx !== -1) shapes.splice(idx, 1);
+                selectedLayerId = shapes.length ? shapes[0]?.id : null;
+                recordAndRefresh();
+            }
+        }
+        
+        function moveLayerUp() {
+            if (!selectedLayerId) return;
+            const idx = shapes.findIndex(s => s.id === selectedLayerId);
+            if (idx < shapes.length - 1) {
+                [shapes[idx], shapes[idx+1]] = [shapes[idx+1], shapes[idx]];
+                recordAndRefresh();
+            }
+        }
+        
+        function moveLayerDown() {
+            if (!selectedLayerId) return;
+            const idx = shapes.findIndex(s => s.id === selectedLayerId);
+            if (idx > 0) {
+                [shapes[idx], shapes[idx-1]] = [shapes[idx-1], shapes[idx]];
+                recordAndRefresh();
+            }
+        }
+        
+        // 渲染图层UI
+        function renderLayerList() {
+            const container = document.getElementById('layerListContainer');
+            if (!container) return;
+            if (shapes.length === 0) {
+                container.innerHTML = '<div style="padding: 10px; text-align:center;">暂无图层</div>';
+                return;
+            }
+            container.innerHTML = '';
+            shapes.forEach(shape => {
+                const typeLabel = shape.type === 'rect' ? '矩形' : (shape.type === 'circle' ? '圆形' : '画笔');
+                const item = document.createElement('div');
+                item.className = `layer-item ${selectedLayerId === shape.id ? 'selected' : ''}`;
+                item.innerHTML = `
+                    <div class="layer-info">
+                        <span style="background:${shape.fillColor || '#fff'}; width:14px; height:14px; display:inline-block; border-radius:3px; border:1px solid #ccc;"></span>
+                        <span>${typeLabel}</span>
+                        <span style="font-size:10px;">#${shape.id.toString().slice(-4)}</span>
+                        ${shape.rotation ? `🔄 ${Math.round(shape.rotation)}°` : ''}
+                    </div>
+                    <div><button class="select-layer" data-id="${shape.id}" style="background:transparent; border:none;">👁️</button></div>
+                `;
+                item.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectedLayerId = shape.id;
+                    renderLayerList();
+                    updateTransformPanel();
+                });
+                container.appendChild(item);
+            });
+            document.querySelectorAll('.select-layer').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const id = btn.dataset.id;
+                    selectedLayerId = id;
+                    renderLayerList();
+                    updateTransformPanel();
+                });
+            });
+        }
+        
+        // 绘制Canvas (支持旋转)
+        function drawShapeOnCanvas(shape) {
+            ctx.save();
+            if (shape.type === 'rect') {
+                ctx.translate(shape.x + shape.w/2, shape.y + shape.h/2);
+                if (shape.rotation) ctx.rotate(shape.rotation * Math.PI / 180);
+                ctx.beginPath();
+                ctx.rect(-shape.w/2, -shape.h/2, shape.w, shape.h);
+                if (shape.fillColor && shape.fillColor !== 'transparent') {
+                    ctx.fillStyle = shape.fillColor;
+                    ctx.fill();
+                }
+                if (shape.borderWidth > 0 && shape.borderColor) {
+                    ctx.strokeStyle = shape.borderColor;
+                    ctx.lineWidth = shape.borderWidth;
+                    ctx.stroke();
+                }
+            } 
+            else if (shape.type === 'circle') {
+                ctx.translate(shape.x + shape.w/2, shape.y + shape.h/2);
+                if (shape.rotation) ctx.rotate(shape.rotation * Math.PI / 180);
+                ctx.beginPath();
+                ctx.ellipse(0, 0, shape.w/2, shape.h/2, 0, 0, 2 * Math.PI);
+                if (shape.fillColor) ctx.fillStyle = shape.fillColor, ctx.fill();
+                if (shape.borderWidth > 0 && shape.borderColor) ctx.strokeStyle = shape.borderColor, ctx.lineWidth = shape.borderWidth, ctx.stroke();
+            }
+            else if (shape.type === 'free' && shape.points && shape.points.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(shape.points[0].x, shape.points[0].y);
+                for (let i=1;i<shape.points.length;i++) ctx.lineTo(shape.points[i].x, shape.points[i].y);
+                ctx.strokeStyle = shape.borderColor;
+                ctx.lineWidth = shape.borderWidth;
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+        
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            for (let shape of shapes) drawShapeOnCanvas(shape);
+        }
+        
+        // 坐标转换
+        function getCanvasCoords(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            let clientX, clientY;
+            if (e.touches) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; }
+            else { clientX = e.clientX; clientY = e.clientY; }
+            let canvasX = (clientX - rect.left) * scaleX;
+            let canvasY = (clientY - rect.top) * scaleY;
+            canvasX = Math.min(Math.max(0, canvasX), canvas.width);
+            canvasY = Math.min(Math.max(0, canvasY), canvas.height);
+            return { x: canvasX, y: canvasY };
+        }
+        
+        // 绘图交互
+        let previewActive = false;
+        function drawTempPreview(endX, endY) {
+            if (!previewActive) return;
+            redrawCanvas();
+            ctx.save();
+            if (currentTool === 'rect') {
+                let w = endX - startX, h = endY - startY;
+                if (shiftPressed) { let side = Math.max(Math.abs(w), Math.abs(h)); w = w>=0?side:-side; h = h>=0?side:-side; }
+                let rx = w>=0?startX:startX+w, ry = h>=0?startY:startY+h, rw=Math.abs(w), rh=Math.abs(h);
+                if (rw>2) {
+                    ctx.beginPath(); ctx.rect(rx, ry, rw, rh);
+                    if (fillColor !== 'transparent') ctx.fillStyle = fillColor, ctx.fill();
+                    if (borderWidth>0) ctx.strokeStyle = borderColor, ctx.lineWidth = borderWidth, ctx.stroke();
+                }
+            } else if (currentTool === 'circle') {
+                let w = endX - startX, h = endY - startY;
+                if (shiftPressed) { let diam = Math.max(Math.abs(w), Math.abs(h)); w = w>=0?diam:-diam; h = h>=0?diam:-diam; }
+                let left = w>=0?startX:startX+w, top = h>=0?startY:startY+h, wid=Math.abs(w), hei=Math.abs(h);
+                if (wid>3) {
+                    ctx.beginPath(); ctx.ellipse(left+wid/2, top+hei/2, wid/2, hei/2, 0, 0, 2*Math.PI);
+                    if (fillColor !== 'transparent') ctx.fillStyle = fillColor, ctx.fill();
+                    if (borderWidth>0) ctx.strokeStyle = borderColor, ctx.lineWidth = borderWidth, ctx.stroke();
+                }
+            }
+            ctx.restore();
+        }
+        
+        function onPointerDown(e) {
+            e.preventDefault();
+            const {x,y} = getCanvasCoords(e);
+            if (currentTool === 'free') {
+                isDrawing = true;
+                currentPathPoints = [{x,y}];
+                previewActive = false;
+            } else {
+                isDrawing = true;
+                startX = x; startY = y;
+                previewActive = true;
+            }
+        }
+        
+        function onPointerMove(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const {x,y} = getCanvasCoords(e);
+            if (currentTool === 'free') {
+                currentPathPoints.push({x,y});
+                redrawCanvas();
+                ctx.save();
+                if (currentPathPoints.length > 1) {
+                    ctx.beginPath();
+                    ctx.moveTo(currentPathPoints[0].x, currentPathPoints[0].y);
+                    for (let i=1;i<currentPathPoints.length;i++) ctx.lineTo(currentPathPoints[i].x, currentPathPoints[i].y);
+                    ctx.strokeStyle = borderColor; ctx.lineWidth = borderWidth; ctx.stroke();
+                }
+                ctx.restore();
+            } else {
+                drawTempPreview(x, y);
+            }
+        }
+        
+        function onPointerUp(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const {x,y} = getCanvasCoords(e);
+            if (currentTool === 'free') {
+                if (currentPathPoints.length > 2) {
+                    addShape({ type: 'free', points: [...currentPathPoints], borderColor, borderWidth, fillColor: 'transparent' });
+                }
+                currentPathPoints = [];
+                isDrawing = false;
+                redrawCanvas();
+            } else {
+                let endX = x, endY = y;
+                let w = endX - startX, h = endY - startY;
+                if (shiftPressed) {
+                    if (currentTool === 'rect') { let side = Math.max(Math.abs(w), Math.abs(h)); w = w>=0?side:-side; h = h>=0?side:-side; }
+                    else if (currentTool === 'circle') { let diam = Math.max(Math.abs(w), Math.abs(h)); w = w>=0?diam:-diam; h = h>=0?diam:-diam; }
+                }
+                if (currentTool === 'rect') {
+                    let rx = w>=0?startX:startX+w, ry = h>=0?startY:startY+h, rw=Math.abs(w), rh=Math.abs(h);
+                    if (rw>4 && rh>4) addShape({ type:'rect', x:rx, y:ry, w:rw, h:rh, fillColor, borderColor, borderWidth, rotation:0 });
+                } else if (currentTool === 'circle') {
+                    let left = w>=0?startX:startX+w, top = h>=0?startY:startY+h, wid=Math.abs(w), hei=Math.abs(h);
+                    if (wid>5 && hei>5) addShape({ type:'circle', x:left, y:top, w:wid, h:hei, fillColor, borderColor, borderWidth, rotation:0 });
+                }
+                isDrawing = false;
+                previewActive = false;
+                redrawCanvas();
+            }
+        }
+        
+        canvas.addEventListener('mousedown', onPointerDown);
+        canvas.addEventListener('mousemove', onPointerMove);
+        canvas.addEventListener('mouseup', onPointerUp);
+        canvas.addEventListener('touchstart', onPointerDown);
+        canvas.addEventListener('touchmove', onPointerMove);
+        canvas.addEventListener('touchend', onPointerUp);
+        window.addEventListener('keydown', (e) => { if(e.key === 'Shift') shiftPressed = true; if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); } if(e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); } });
+        window.addEventListener('keyup', (e) => { if(e.key === 'Shift') shiftPressed = false; });
+        
+        function setActiveTool(tool) {
+            currentTool = tool;
+            [rectBtn, circleBtn, freeBtn].forEach(btn => btn.classList.remove('active'));
+            if (tool === 'rect') rectBtn.classList.add('active');
+            if (tool === 'circle') circleBtn.classList.add('active');
+            if (tool === 'free') freeBtn.classList.add('active');
+            isDrawing = false;
+        }
+        
+        rectBtn.addEventListener('click', () => setActiveTool('rect'));
+        circleBtn.addEventListener('click', () => setActiveTool('circle'));
+        freeBtn.addEventListener('click', () => setActiveTool('free'));
+        fillPicker.addEventListener('change', e => fillColor = e.target.value);
+        borderPicker.addEventListener('change', e => borderColor = e.target.value);
+        borderWidthInput.addEventListener('change', e => borderWidth = parseInt(e.target.value)||2);
+        clearBtn.addEventListener('click', () => { shapes = []; selectedLayerId = null; recordAndRefresh(); });
+        undoBtn.addEventListener('click', undo);
+        redoBtn.addEventListener('click', redo);
+        deleteLayerBtn.addEventListener('click', deleteSelectedLayer);
+        moveUpBtn.addEventListener('click', moveLayerUp);
+        moveDownBtn.addEventListener('click', moveLayerDown);
+        applyTransformBtn.addEventListener('click', applyTransformToSelected);
+        
+        // 生成纯DIV代码
+        function generatePureDivCode() {
+            if (shapes.length === 0) return `<!-- 无图形 -->\n<div style="position:relative; width:780px; height:520px;"></div>`;
+            const containerId = `div_art_${Date.now()}`;
+            let styleBlocks = [], divElements = [];
+            shapes.forEach((shape, idx) => {
+                if (shape.type === 'rect') {
+                    let cls = `r_${containerId}_${idx}`;
+                    let transformStyle = shape.rotation ? `transform: rotate(${shape.rotation}deg); transform-origin: center;` : '';
+                    styleBlocks.push(`.${cls}{position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.w}px; height:${shape.h}px; background-color:${shape.fillColor}; border:${shape.borderWidth}px solid ${shape.borderColor}; box-sizing:border-box; ${transformStyle}}`);
+                    divElements.push(`<div class="${cls}"></div>`);
+                } else if (shape.type === 'circle') {
+                    let cls = `c_${containerId}_${idx}`;
+                    let transformStyle = shape.rotation ? `transform: rotate(${shape.rotation}deg); transform-origin: center;` : '';
+                    styleBlocks.push(`.${cls}{position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.w}px; height:${shape.h}px; background-color:${shape.fillColor}; border:${shape.borderWidth}px solid ${shape.borderColor}; border-radius:50%; box-sizing:border-box; ${transformStyle}}`);
+                    divElements.push(`<div class="${cls}"></div>`);
+                } else if (shape.type === 'free' && shape.points) {
+                    for (let i=0; i<shape.points.length-1; i++) {
+                        let p1=shape.points[i], p2=shape.points[i+1];
+                        let dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.hypot(dx,dy);
+                        if(len<1) continue;
+                        let ang=Math.atan2(dy,dx)*180/Math.PI, cx=(p1.x+p2.x)/2, cy=(p1.y+p2.y)/2, wd=shape.borderWidth;
+                        let segCls = `f_${containerId}_${idx}_${i}`;
+                        styleBlocks.push(`.${segCls}{position:absolute; left:${cx-len/2}px; top:${cy-wd/2}px; width:${len}px; height:${wd}px; background-color:${shape.borderColor}; border-radius:${wd/2}px; transform:rotate(${ang}deg); transform-origin:center; box-sizing:border-box;}`);
+                        divElements.push(`<div class="${segCls}"></div>`);
+                    }
+                }
+            });
+            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>纯DIV画作</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;}.${containerId}{position:relative;width:780px;height:520px;background:#ffffff;}${styleBlocks.join(' ')}</style></head><body><div class="${containerId}">${divElements.join('')}</div></body></html>`;
+        }
+        
+        generateBtn.addEventListener('click', () => { document.getElementById('generatedCodePreview').innerText = generatePureDivCode(); });
+        copyBtn.addEventListener('click', async () => { let code = document.getElementById('generatedCodePreview').innerText; if(code && !code.includes('无图形')) await navigator.clipboard.writeText(code); alert('代码已复制'); });
+        exportImgBtn.addEventListener('click', () => { let link = document.createElement('a'); link.download = 'canvas_art.png'; link.href = canvas.toDataURL(); link.click(); });
+        
+        // 初始化
+        saveToHistory();
+        redrawCanvas();
+        setActiveTool('rect');
+        renderLayerList();
+    })();
+</script>
+</body>
+</html>
