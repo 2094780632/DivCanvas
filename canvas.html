@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>专业画板 - 保存/加载 | 图层变换 | 完整存储结构</title>
+    <title>专业画板 - 整数约束 | 图层变换 | 保存加载</title>
     <style>
         * {
             box-sizing: border-box;
@@ -34,7 +34,6 @@
             padding: 0;
         }
 
-        /* 画板区域 */
         .draw-area {
             flex: 2.2;
             min-width: 520px;
@@ -139,7 +138,6 @@
             border: none;
         }
 
-        /* 图层面板 */
         .layers-panel {
             flex: 0.9;
             min-width: 260px;
@@ -208,7 +206,7 @@
         }
 
         .transform-control input {
-            width: 60px;
+            width: 65px;
             border-radius: 20px;
             border: 1px solid #cbd5e1;
             padding: 3px 6px;
@@ -224,7 +222,6 @@
             cursor: pointer;
         }
 
-        /* 代码区 */
         .code-area {
             flex: 1.2;
             min-width: 350px;
@@ -270,7 +267,7 @@
             color: #cbd5e6;
             text-align: center;
         }
-        
+
         .file-input-label {
             background: #334155;
             padding: 5px 12px;
@@ -288,7 +285,6 @@
 <body>
 <div class="app-wrapper">
     <div class="workspace">
-        <!-- 绘图区 -->
         <div class="draw-area">
             <div class="toolbar">
                 <div class="tool-group">
@@ -307,10 +303,10 @@
                 </div>
                 <div class="tool-group">
                     <span>📏 宽度</span>
-                    <input type="number" id="borderWidthInput" value="3" min="0" max="10" style="width: 52px;">
+                    <input type="number" id="borderWidthInput" value="3" min="0" max="10" step="1" style="width: 55px;">
                 </div>
                 <div class="tool-group">
-                    <span>🔘 Shift+拖拽 → 正形</span>
+                    <span>🔘 Shift+拖拽 → 正形 (整数)</span>
                 </div>
             </div>
             <div class="canvas-container">
@@ -325,11 +321,10 @@
                 <input type="file" id="loadFileInput" accept=".json">
             </div>
             <div class="badge-note" style="margin-top: 10px; background:#eef2ff; color:#1e293b;">
-                💾 存储结构: 包含版本、画板尺寸、图层数组(含类型、坐标、尺寸、颜色、边框、旋转角度、画笔路径点等)
+                ✅ 所有图形数值均为整数 (坐标、宽高、旋转角度、边框宽度等)。变换输入框自动取整。
             </div>
         </div>
 
-        <!-- 图层管理 + 变换编辑 -->
         <div class="layers-panel">
             <div class="layers-header">
                 <h4 style="margin:0;">🎚️ 图层 & 变换</h4>
@@ -347,16 +342,15 @@
                 <button id="moveDownLayerBtn" class="small-btn">下移</button>
             </div>
             
-            <!-- 变换编辑面板 -->
             <div class="transform-panel" id="transformPanel" style="display: none;">
-                <div style="font-size:0.7rem; font-weight:600; margin-bottom:6px;">✏️ 变换 (选中图层)</div>
+                <div style="font-size:0.7rem; font-weight:600; margin-bottom:6px;">✏️ 变换 (整数)</div>
                 <div class="transform-control">
-                    <span>X:</span> <input type="number" id="posX" step="1">
-                    <span>Y:</span> <input type="number" id="posY" step="1">
+                    <span>X:</span> <input type="number" id="posX" step="1" value="0">
+                    <span>Y:</span> <input type="number" id="posY" step="1" value="0">
                 </div>
                 <div class="transform-control">
-                    <span>宽:</span> <input type="number" id="scaleW" step="1" min="2">
-                    <span>高:</span> <input type="number" id="scaleH" step="1" min="2">
+                    <span>宽:</span> <input type="number" id="scaleW" step="1" min="2" value="50">
+                    <span>高:</span> <input type="number" id="scaleH" step="1" min="2" value="50">
                 </div>
                 <div class="transform-control">
                     <span>旋转:</span> <input type="number" id="rotateDeg" step="1" value="0"> °
@@ -365,15 +359,14 @@
             </div>
         </div>
 
-        <!-- 代码区 -->
         <div class="code-area">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight: 600;">📦 纯DIV输出</span>
+                <span style="font-weight: 600;">📦 纯DIV输出 (整数坐标)</span>
                 <button class="copy-btn" id="copyFinalCodeBtn">📋 复制代码</button>
             </div>
             <div class="code-box">
-                <pre id="generatedCodePreview">// 支持保存/加载项目 (完整存储结构)
-// 绘制图形后点击 💾 保存项目，下次点击 📂 加载项目恢复</pre>
+                <pre id="generatedCodePreview">// 所有图形数值均为整数 (位置/尺寸/旋转角度)
+// 绘制图形后支持保存/加载项目</pre>
             </div>
         </div>
     </div>
@@ -381,34 +374,34 @@
 
 <script>
     (function() {
-        // ========== 全局数据 ==========
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = 780;
         canvas.height = 520;
 
-        // 存储结构: 版本1.0, 包含画板尺寸，图层数组
-        let shapes = [];           // 每个shape: { id, type, x, y, w, h, rotation, fillColor, borderColor, borderWidth, points(仅free) }
+        // 整数辅助函数
+        function toInt(val) {
+            return Math.round(val);
+        }
+
+        let shapes = [];           // 每个shape中 x,y,w,h,rotation 均为整数
         let selectedLayerId = null;
         
-        // 历史记录 (撤销/重做)
         let historyStack = [];
         let historyIndex = -1;
         const MAX_HISTORY = 50;
         
-        // 工具状态
         let currentTool = 'rect';
         let fillColor = '#ffb3da';
         let borderColor = '#ef96c2';
         let borderWidth = 3;
         let shiftPressed = false;
         
-        // 绘图临时变量
         let isDrawing = false;
         let startX = 0, startY = 0;
         let currentPathPoints = [];
         
-        // DOM 元素绑定
+        // DOM
         const rectBtn = document.getElementById('tool-rect');
         const circleBtn = document.getElementById('tool-circle');
         const freeBtn = document.getElementById('tool-free');
@@ -434,8 +427,14 @@
         const saveProjectBtn = document.getElementById('saveProjectBtn');
         const loadFileInput = document.getElementById('loadFileInput');
 
-        // ========== 存储结构定义 & 保存/加载 ==========
-        // 构建当前项目的存储对象
+        // 确保边框宽度整数
+        borderWidthInput.addEventListener('change', () => {
+            borderWidth = toInt(parseFloat(borderWidthInput.value) || 3);
+            if (borderWidth < 0) borderWidth = 0;
+            borderWidthInput.value = borderWidth;
+        });
+
+        // ========== 存储结构 ==========
         function buildStorageData() {
             return {
                 version: "1.0",
@@ -457,16 +456,13 @@
                         base.w = shape.w;
                         base.h = shape.h;
                     } else if (shape.type === 'free') {
-                        base.points = shape.points; // 存储路径点数组
-                        base.borderColor = shape.borderColor;
-                        base.borderWidth = shape.borderWidth;
+                        base.points = shape.points.map(p => ({ x: p.x, y: p.y }));
                     }
                     return base;
                 })
             };
         }
         
-        // 从存储数据恢复shapes
         function restoreFromData(data) {
             if (!data || !data.layers) return false;
             const newShapes = [];
@@ -475,35 +471,35 @@
                     newShapes.push({
                         id: item.id || Date.now() + Math.random() * 10000,
                         type: 'rect',
-                        x: item.x,
-                        y: item.y,
-                        w: item.w,
-                        h: item.h,
-                        rotation: item.rotation || 0,
+                        x: toInt(item.x),
+                        y: toInt(item.y),
+                        w: toInt(item.w),
+                        h: toInt(item.h),
+                        rotation: toInt(item.rotation || 0),
                         fillColor: item.fillColor || '#ffb3da',
                         borderColor: item.borderColor || '#ef96c2',
-                        borderWidth: item.borderWidth || 3
+                        borderWidth: toInt(item.borderWidth || 3)
                     });
                 } else if (item.type === 'circle') {
                     newShapes.push({
                         id: item.id || Date.now() + Math.random() * 10000,
                         type: 'circle',
-                        x: item.x,
-                        y: item.y,
-                        w: item.w,
-                        h: item.h,
-                        rotation: item.rotation || 0,
+                        x: toInt(item.x),
+                        y: toInt(item.y),
+                        w: toInt(item.w),
+                        h: toInt(item.h),
+                        rotation: toInt(item.rotation || 0),
                         fillColor: item.fillColor || '#ffb3da',
                         borderColor: item.borderColor || '#ef96c2',
-                        borderWidth: item.borderWidth || 3
+                        borderWidth: toInt(item.borderWidth || 3)
                     });
                 } else if (item.type === 'free' && item.points) {
                     newShapes.push({
                         id: item.id || Date.now() + Math.random() * 10000,
                         type: 'free',
-                        points: item.points,
+                        points: item.points.map(p => ({ x: p.x, y: p.y })),
                         borderColor: item.borderColor || '#ef96c2',
-                        borderWidth: item.borderWidth || 3,
+                        borderWidth: toInt(item.borderWidth || 3),
                         fillColor: 'transparent',
                         rotation: 0
                     });
@@ -514,7 +510,6 @@
             return true;
         }
         
-        // 保存项目到文件
         function saveProjectToFile() {
             const storage = buildStorageData();
             const jsonStr = JSON.stringify(storage, null, 2);
@@ -529,17 +524,15 @@
             URL.revokeObjectURL(url);
         }
         
-        // 加载项目文件
         function loadProjectFromFile(file) {
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
                     const data = JSON.parse(e.target.result);
                     if (restoreFromData(data)) {
-                        // 重置历史记录
                         historyStack = [];
                         historyIndex = -1;
-                        recordAndRefresh(); // 保存初始状态
+                        recordAndRefresh();
                         selectedLayerId = shapes.length > 0 ? shapes[0].id : null;
                         redrawCanvas();
                         renderLayerList();
@@ -602,10 +595,24 @@
             }
         }
         
-        // 添加图形
+        // 添加图形 (所有数值取整)
         function addShape(shapeData) {
             const newId = Date.now() + Math.random() * 10000 + shapes.length;
-            const newShape = { ...shapeData, id: newId, rotation: shapeData.rotation || 0 };
+            let newShape = { ...shapeData, id: newId };
+            if (newShape.type === 'rect' || newShape.type === 'circle') {
+                newShape.x = toInt(newShape.x);
+                newShape.y = toInt(newShape.y);
+                newShape.w = Math.max(2, toInt(newShape.w));
+                newShape.h = Math.max(2, toInt(newShape.h));
+                newShape.rotation = toInt(newShape.rotation || 0);
+                newShape.borderWidth = toInt(newShape.borderWidth);
+            }
+            if (newShape.type === 'free') {
+                newShape.borderWidth = toInt(newShape.borderWidth);
+                if (newShape.points) {
+                    newShape.points = newShape.points.map(p => ({ x: toInt(p.x), y: toInt(p.y) }));
+                }
+            }
             shapes.push(newShape);
             recordAndRefresh();
             selectedLayerId = newId;
@@ -613,7 +620,6 @@
             updateTransformPanel();
         }
         
-        // 变换逻辑
         function updateTransformPanel() {
             if (!selectedLayerId) {
                 transformPanel.style.display = 'none';
@@ -625,22 +631,22 @@
                 return;
             }
             transformPanel.style.display = 'block';
-            posXInput.value = Math.round(layer.x);
-            posYInput.value = Math.round(layer.y);
-            scaleWInput.value = Math.round(layer.w);
-            scaleHInput.value = Math.round(layer.h);
-            rotateDegInput.value = Math.round(layer.rotation || 0);
+            posXInput.value = layer.x;
+            posYInput.value = layer.y;
+            scaleWInput.value = layer.w;
+            scaleHInput.value = layer.h;
+            rotateDegInput.value = layer.rotation || 0;
         }
         
         function applyTransformToSelected() {
             if (!selectedLayerId) return;
             const layer = shapes.find(s => s.id === selectedLayerId);
             if (!layer || layer.type === 'free') return;
-            const newX = parseFloat(posXInput.value);
-            const newY = parseFloat(posYInput.value);
-            const newW = Math.max(2, parseFloat(scaleWInput.value));
-            const newH = Math.max(2, parseFloat(scaleHInput.value));
-            const newRot = parseFloat(rotateDegInput.value) % 360;
+            const newX = toInt(parseFloat(posXInput.value));
+            const newY = toInt(parseFloat(posYInput.value));
+            const newW = Math.max(2, toInt(parseFloat(scaleWInput.value)));
+            const newH = Math.max(2, toInt(parseFloat(scaleHInput.value)));
+            const newRot = toInt(parseFloat(rotateDegInput.value)) % 360;
             if (isNaN(newX) || isNaN(newY) || isNaN(newW) || isNaN(newH)) return;
             layer.x = newX;
             layer.y = newY;
@@ -677,7 +683,6 @@
             }
         }
         
-        // 渲染图层UI
         function renderLayerList() {
             const container = document.getElementById('layerListContainer');
             if (!container) return;
@@ -695,7 +700,7 @@
                         <span style="background:${shape.fillColor || '#fff'}; width:14px; height:14px; display:inline-block; border-radius:3px; border:1px solid #ccc;"></span>
                         <span>${typeLabel}</span>
                         <span style="font-size:10px;">#${shape.id.toString().slice(-4)}</span>
-                        ${shape.rotation ? `🔄 ${Math.round(shape.rotation)}°` : ''}
+                        ${shape.rotation ? `🔄 ${shape.rotation}°` : ''}
                     </div>
                     <div><button class="select-layer" data-id="${shape.id}" style="background:transparent; border:none;">👁️</button></div>
                 `;
@@ -718,7 +723,6 @@
             });
         }
         
-        // 绘制Canvas (支持旋转)
         function drawShapeOnCanvas(shape) {
             ctx.save();
             if (shape.type === 'rect') {
@@ -762,7 +766,6 @@
             for (let shape of shapes) drawShapeOnCanvas(shape);
         }
         
-        // 坐标转换
         function getCanvasCoords(e) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
@@ -777,7 +780,6 @@
             return { x: canvasX, y: canvasY };
         }
         
-        // 绘图交互
         let previewActive = false;
         function drawTempPreview(endX, endY) {
             if (!previewActive) return;
@@ -810,7 +812,7 @@
             const {x,y} = getCanvasCoords(e);
             if (currentTool === 'free') {
                 isDrawing = true;
-                currentPathPoints = [{x,y}];
+                currentPathPoints = [{x: toInt(x), y: toInt(y)}];
                 previewActive = false;
             } else {
                 isDrawing = true;
@@ -824,7 +826,7 @@
             e.preventDefault();
             const {x,y} = getCanvasCoords(e);
             if (currentTool === 'free') {
-                currentPathPoints.push({x,y});
+                currentPathPoints.push({x: toInt(x), y: toInt(y)});
                 redrawCanvas();
                 ctx.save();
                 if (currentPathPoints.length > 1) {
@@ -858,11 +860,17 @@
                     else if (currentTool === 'circle') { let diam = Math.max(Math.abs(w), Math.abs(h)); w = w>=0?diam:-diam; h = h>=0?diam:-diam; }
                 }
                 if (currentTool === 'rect') {
-                    let rx = w>=0?startX:startX+w, ry = h>=0?startY:startY+h, rw=Math.abs(w), rh=Math.abs(h);
-                    if (rw>4 && rh>4) addShape({ type:'rect', x:rx, y:ry, w:rw, h:rh, fillColor, borderColor, borderWidth, rotation:0 });
+                    let rx = toInt(w>=0?startX:startX+w);
+                    let ry = toInt(h>=0?startY:startY+h);
+                    let rw = Math.max(2, toInt(Math.abs(w)));
+                    let rh = Math.max(2, toInt(Math.abs(h)));
+                    if (rw>3 && rh>3) addShape({ type:'rect', x:rx, y:ry, w:rw, h:rh, fillColor, borderColor, borderWidth, rotation:0 });
                 } else if (currentTool === 'circle') {
-                    let left = w>=0?startX:startX+w, top = h>=0?startY:startY+h, wid=Math.abs(w), hei=Math.abs(h);
-                    if (wid>5 && hei>5) addShape({ type:'circle', x:left, y:top, w:wid, h:hei, fillColor, borderColor, borderWidth, rotation:0 });
+                    let left = toInt(w>=0?startX:startX+w);
+                    let top = toInt(h>=0?startY:startY+h);
+                    let wid = Math.max(4, toInt(Math.abs(w)));
+                    let hei = Math.max(4, toInt(Math.abs(h)));
+                    if (wid>4 && hei>4) addShape({ type:'circle', x:left, y:top, w:wid, h:hei, fillColor, borderColor, borderWidth, rotation:0 });
                 }
                 isDrawing = false;
                 previewActive = false;
@@ -893,7 +901,6 @@
         freeBtn.addEventListener('click', () => setActiveTool('free'));
         fillPicker.addEventListener('change', e => fillColor = e.target.value);
         borderPicker.addEventListener('change', e => borderColor = e.target.value);
-        borderWidthInput.addEventListener('change', e => borderWidth = parseInt(e.target.value)||2);
         clearBtn.addEventListener('click', () => { shapes = []; selectedLayerId = null; recordAndRefresh(); });
         undoBtn.addEventListener('click', undo);
         redoBtn.addEventListener('click', redo);
@@ -902,7 +909,7 @@
         moveDownBtn.addEventListener('click', moveLayerDown);
         applyTransformBtn.addEventListener('click', applyTransformToSelected);
         
-        // 生成纯DIV代码
+        // 生成纯DIV代码 (整数)
         function generatePureDivCode() {
             if (shapes.length === 0) return `<!-- 无图形 -->\n<div style="position:relative; width:780px; height:520px;"></div>`;
             const containerId = `div_art_${Date.now()}`;
@@ -930,14 +937,13 @@
                     }
                 }
             });
-            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>纯DIV画作</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;}.${containerId}{position:relative;width:780px;height:520px;background:#ffffff;}${styleBlocks.join(' ')}</style></head><body><div class="${containerId}">${divElements.join('')}</div></body></html>`;
+            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>纯DIV画作-整数约束</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;}.${containerId}{position:relative;width:780px;height:520px;background:#ffffff;}${styleBlocks.join(' ')}</style></head><body><div class="${containerId}">${divElements.join('')}</div></body></html>`;
         }
         
         generateBtn.addEventListener('click', () => { document.getElementById('generatedCodePreview').innerText = generatePureDivCode(); });
         copyBtn.addEventListener('click', async () => { let code = document.getElementById('generatedCodePreview').innerText; if(code && !code.includes('无图形')) await navigator.clipboard.writeText(code); alert('代码已复制'); });
         exportImgBtn.addEventListener('click', () => { let link = document.createElement('a'); link.download = 'canvas_art.png'; link.href = canvas.toDataURL(); link.click(); });
         
-        // 初始化
         saveToHistory();
         redrawCanvas();
         setActiveTool('rect');
