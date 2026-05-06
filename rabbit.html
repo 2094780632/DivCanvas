@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>CSS兔</title>
+    <style type="text/css">
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --rabbit-base: #ffffff;
+            --rabbit-shadow: #e6e6e6;
+            --pink-light: #ffdae0;
+            --pink-dark: #ffb6c1;
+            --outline: #4a2c2a;
+        }
+
+        body {
+            background: radial-gradient(circle at 30% 20%, #fff3e0, #f5e2b0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .rabbit {
+            position: relative;
+            width: 800px;
+            height: 800px;
+            margin: 0 auto;
+        }
+
+        div { 
+            position: absolute; 
+            box-sizing: border-box; 
+        }
+
+        /* 地面阴影 */
+        .shadow {
+            width: 400px;
+            height: 80px;
+            background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.18), rgba(0,0,0,0.05), transparent 70%);
+            bottom: 50px;
+            left: 200px;
+            border-radius: 50%;
+            filter: blur(1px);
+        }
+
+        /* 耳朵样式 */
+        .ear {
+            width: 108px;
+            height: 300px;
+            background: linear-gradient(145deg, var(--rabbit-base) 20%, #f4f0eb, var(--rabbit-shadow));
+            border: 8px solid var(--outline);
+            border-radius: 50% 50% 28% 28%;
+            top: 10px;
+            z-index: 1;
+            box-shadow: -4px 6px 12px rgba(0,0,0,0.08);
+        }
+
+        /* 耳内粉色区域 */
+        .ear-inner {
+            width: 56px;
+            height: 200px;
+            background: linear-gradient(145deg, var(--pink-light), var(--pink-dark), #ff9eb0);
+            border-radius: 50% 50% 28% 28%;
+            top: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        /* 左耳 */
+        .ear-left { 
+            left: 260px;
+            transform: rotate(-12deg); 
+        }
+
+        /* 右耳 */
+        .ear-right { 
+            left: 432px;
+            transform: rotate(12deg); 
+        }
+
+        /* 头部 */
+        .head {
+            width: 420px;
+            height: 360px;
+            background: radial-gradient(circle at 35% 32%, #fff 0%, #fffcf5 25%, #f2efe6 70%, var(--rabbit-shadow) 100%);
+            border: 10px solid var(--outline);
+            border-radius: 50% 50% 48% 48%;
+            top: 200px;
+            left: 190px;
+            z-index: 10;
+            box-shadow: 8px 12px 20px rgba(0,0,0,0.1);
+        }
+
+        /* 眼睛 */
+        .eye {
+            width: 40px;
+            height: 52px;
+            background: radial-gradient(circle at 40% 40%, #2a241f, #0a0a0a);
+            border-radius: 50%;
+            top: 160px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        /* 眼睛高光 */
+        .eye::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            background: radial-gradient(circle, #fff, #f0f0f0);
+            border-radius: 50%;
+            top: 8px;
+            left: 8px;
+            filter: blur(0.3px);
+        }
+
+        .eye-left { left: 110px; }
+        .eye-right { left: 270px; }
+
+        /* 腮红 */
+        .blush {
+            width: 80px;
+            height: 44px;
+            background: radial-gradient(circle, #ffb8c6, #ff99aa, transparent 75%);
+            top: 220px;
+            opacity: 0.75;
+            filter: blur(2px);
+        }
+
+        .blush-left { left: 35px; }
+        .blush-right { left: 305px; }
+
+        /* 鼻子 */
+        .nose {
+            width: 36px;
+            height: 24px;
+            background: radial-gradient(circle at 35% 35%, #ff7f97, #ff3a60);
+            border-radius: 50%;
+            top: 220px;
+            left: 192px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* 身体 */
+        .body {
+            width: 340px;
+            height: 280px;
+            background: radial-gradient(circle at 55% 35%, #fff, #fef9f0, var(--rabbit-shadow));
+            border: 10px solid var(--outline);
+            border-radius: 50% 50% 44% 44%;
+            top: 480px;
+            left: 230px;
+            z-index: 5;
+            box-shadow: 6px 12px 18px rgba(0,0,0,0.1);
+        }
+
+        /* 蝴蝶结中心 */
+        .bowtie {
+            width: 88px;
+            height: 44px;
+            background: linear-gradient(135deg, #ff7f92, #e8475e, #c12f46);
+            top: 520px;
+            left: 356px;
+            z-index: 25;
+            border-radius: 52% 48% 100% 0% / 100% 100% 0% 0%;
+            border: 6px solid var(--outline);
+            box-shadow: 0 5px 10px rgba(0,0,0,0.1);
+        }
+
+        /* 蝴蝶结左右翅膀 */
+        .bowtie::before, .bowtie::after {
+            content: '';
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(145deg, #ff7085, #d63a4e);
+            border: 6px solid var(--outline);
+            top: -14px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+        }
+
+        .bowtie::before {
+            left: -50px;
+            border-radius: 70% 30% 74% 26% / 50% 12% 88% 50%;
+            transform: rotate(18deg);
+        }
+
+        .bowtie::after {
+            right: -50px;
+            border-radius: 24% 76% 34% 66% / 24% 32% 68% 76%;
+            transform: rotate(-18deg);
+        }
+
+        /* 四肢样式 */
+        .limb {
+            background: linear-gradient(to bottom, #fefaf5, #e8e2d8);
+            border: 8px solid var(--outline);
+            z-index: 15;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.02), 2px 4px 8px rgba(0,0,0,0.08);
+        }
+
+        /* 手臂 */
+        .hand {
+            width: 76px;
+            height: 100px;
+            border-radius: 48% 52% 45% 55% / 60% 40% 60% 40%;
+            top: 530px;
+        }
+
+        .hand-l {
+            left: 210px;
+            transform: rotate(-32deg);
+        }
+
+        .hand-r {
+            left: 514px;
+            transform: rotate(32deg);
+        }
+
+        /* 脚 */
+        .foot {
+            width: 130px;
+            height: 80px;
+            border-radius: 60px 60px 28px 28px;
+            bottom: 30px;
+            z-index: 2;
+        }
+
+        .foot-l {
+            left: 240px;
+        }
+
+        .foot-r {
+            left: 430px;
+        }
+
+        /* 耳朵光泽效果 */
+        .ear-left::after {
+            content: '';
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            background: radial-gradient(circle, rgba(255,255,240,0.7), transparent);
+            border-radius: 50%;
+            top: 30px;
+            left: 20px;
+            pointer-events: none;
+        }
+
+        .ear-right::after {
+            content: '';
+            position: absolute;
+            width: 28px;
+            height: 28px;
+            background: radial-gradient(circle, rgba(255,255,240,0.7), transparent);
+            border-radius: 50%;
+            top: 30px;
+            right: 20px;
+            pointer-events: none;
+        }
+
+        /* 整体投影 */
+        .rabbit {
+            filter: drop-shadow(0 12px 18px rgba(0, 0, 0, 0.12));
+        }
+
+        /* 脚垫 */
+        .foot-l::before, .foot-r::before {
+            content: '';
+            position: absolute;
+            width: 30px;
+            height: 24px;
+            background: radial-gradient(circle, #ffb7c3, #f28b9c);
+            border-radius: 50%;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0.7;
+            border: 1px solid rgba(74,44,42,0.3);
+        }
+
+    </style>
+</head>
+<body>
+<div class="rabbit">
+    <!-- 地面阴影 -->
+    <div class="shadow"></div>
+
+    <!-- 左耳 -->
+    <div class="ear ear-left">
+        <div class="ear-inner"></div>
+    </div>
+    
+    <!-- 右耳 -->
+    <div class="ear ear-right">
+        <div class="ear-inner"></div>
+    </div>
+
+    <!-- 身体 -->
+    <div class="body"></div>
+    
+    <!-- 蝴蝶结 -->
+    <div class="bowtie"></div>
+
+    <!-- 双手 -->
+    <div class="limb hand hand-l"></div>
+    <div class="limb hand hand-r"></div>
+    
+    <!-- 双脚 -->
+    <div class="limb foot foot-l"></div>
+    <div class="limb foot foot-r"></div>
+
+    <!-- 头部（包含五官） -->
+    <div class="head">
+        <div class="eye eye-left"></div>
+        <div class="eye eye-right"></div>
+        <div class="blush blush-left"></div>
+        <div class="blush blush-right"></div>
+        <div class="nose"></div>
+    </div>
+</div>
+</body>
+</html>

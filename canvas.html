@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>专业画板 - 修复撤销 | 直接操控图层 | 整数约束</title>
+    <title>专业画板 - 图层命名 | 直接操控 | 智能撤销 | 纯DIV生成</title>
     <style>
         * {
             box-sizing: border-box;
@@ -153,7 +153,7 @@
 
         .layers-panel {
             flex: 0.9;
-            min-width: 260px;
+            min-width: 280px;
             background: #ffffffdd;
             backdrop-filter: blur(8px);
             border-radius: 24px;
@@ -173,11 +173,11 @@
         }
 
         .layer-list {
-            max-height: 280px;
+            max-height: 320px;
             overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
         }
 
         .layer-item {
@@ -190,11 +190,36 @@
             cursor: pointer;
             border: 1px solid #e2e8f0;
             font-size: 0.75rem;
+            flex-wrap: wrap;
+            gap: 6px;
         }
 
         .layer-item.selected {
             background: #e0f2fe;
             border-color: #7aa9c4;
+        }
+
+        .layer-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex: 2;
+            min-width: 120px;
+        }
+
+        .layer-name-input {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 20px;
+            border: 1px solid #cbd5e1;
+            background: white;
+            width: 100px;
+            font-family: monospace;
+        }
+
+        .layer-name-input:focus {
+            outline: none;
+            border-color: #2c5f8a;
         }
 
         .transform-panel {
@@ -316,8 +341,7 @@
                 <button class="btn" id="loadFromTextBtn">📂 从文本框加载</button>
             </div>
             <div class="badge-note" style="margin-top: 10px; background:#eef2ff; color:#1e293b;">
-                🖱️ 选中图层后，可直接拖拽移动、缩放、旋转。拖拽结束后才记录撤销。<br>
-                ✅ 撤销/重做功能已修复：每次绘图、删除、上移下移、面板变换都会正确记录历史。
+                ✏️ 双击图层名称可自定义命名，生成 DIV 代码时会使用图层名作为 CSS 类名（自动清理非法字符）
             </div>
         </div>
 
@@ -334,8 +358,8 @@
             </div>
             <div style="display: flex; gap: 6px; margin-bottom: 6px;">
                 <button id="deleteLayerBtn" class="small-btn" style="background:#fee2e2;">删除选中</button>
-                <button id="moveUpLayerBtn" class="small-btn">上移</button>
-                <button id="moveDownLayerBtn" class="small-btn">下移</button>
+                <button id="moveUpBtn" class="small-btn">上移</button>
+                <button id="moveDownBtn" class="small-btn">下移</button>
                 <button id="deselectBtn" class="small-btn">取消选中</button>
             </div>
             
@@ -358,12 +382,12 @@
 
         <div class="code-area">
             <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span style="font-weight: 600;">📦 纯DIV输出</span>
+                <span style="font-weight: 600;">📦 纯DIV输出 (使用图层名作为类名)</span>
                 <button class="copy-btn" id="copyFinalCodeBtn">📋 复制代码</button>
             </div>
             <div class="code-box">
-                <pre id="generatedCodePreview">// 直接操控图层：拖拽移动、角点缩放、顶部旋转
-// 撤销/重做已修复：每次操作都会正确记录历史</pre>
+                <pre id="generatedCodePreview">// 双击图层名称可以自定义命名
+// 生成 DIV 代码时，会使用图层名作为 CSS 类名（自动转换为合法的CSS标识符）</pre>
             </div>
         </div>
     </div>
@@ -378,7 +402,20 @@
         const overlayDiv = document.getElementById('transformOverlay');
         
         function toInt(val) { return Math.round(val); }
+        
+        // 将用户输入的字符串转换为合法的 CSS 类名
+        function sanitizeClassName(name, fallback) {
+            if (!name || name.trim() === '') return fallback;
+            let sanitized = name.trim()
+                .replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, '-')  // 允许中文、字母数字、下划线、连字符
+                .replace(/^-+|-+$/g, '');
+            if (sanitized.length === 0) return fallback;
+            // 确保不以数字开头
+            if (/^\d/.test(sanitized)) sanitized = '_' + sanitized;
+            return sanitized;
+        }
 
+        // 图层数据结构: 增加 name 字段
         let shapes = [];
         let selectedLayerId = null;
         
@@ -387,7 +424,6 @@
         let historyIndex = -1;
         const MAX_HISTORY = 50;
         
-        // 变换拖拽过程中的临时状态（不记录历史）
         let isTransforming = false;
         let transformPendingHistory = false;
         
@@ -421,8 +457,8 @@
         const undoBtn = document.getElementById('undoBtn');
         const redoBtn = document.getElementById('redoBtn');
         const deleteLayerBtn = document.getElementById('deleteLayerBtn');
-        const moveUpBtn = document.getElementById('moveUpLayerBtn');
-        const moveDownBtn = document.getElementById('moveDownLayerBtn');
+        const moveUpBtn = document.getElementById('moveUpBtn');
+        const moveDownBtn = document.getElementById('moveDownBtn');
         const deselectBtn = document.getElementById('deselectBtn');
         const transformPanel = document.getElementById('transformPanel');
         const posXInput = document.getElementById('posX');
@@ -435,15 +471,22 @@
         const loadFromTextBtn = document.getElementById('loadFromTextBtn');
         const loadJsonInput = document.getElementById('loadJsonInput');
         
+        // 生成默认图层名
+        function generateDefaultName(type) {
+            const typeMap = { 'rect': '矩形', 'circle': '圆形', 'free': '画笔' };
+            const typeName = typeMap[type] || '图形';
+            const existing = shapes.filter(s => s.name && s.name.startsWith(typeName));
+            const count = existing.length + 1;
+            return `${typeName}${count}`;
+        }
+        
         // ========== 核心历史操作 ==========
         function pushToHistory() {
-            // 如果正在变换拖拽中，延迟保存
             if (isTransforming) {
                 transformPendingHistory = true;
                 return;
             }
             const copy = JSON.parse(JSON.stringify(shapes));
-            // 如果当前位置不是最后，删除后面的记录
             if (historyIndex < historyStack.length - 1) {
                 historyStack = historyStack.slice(0, historyIndex + 1);
             }
@@ -453,7 +496,6 @@
             transformPendingHistory = false;
         }
         
-        // 变换结束后调用，保存最终状态
         function commitTransformHistory() {
             if (transformPendingHistory) {
                 transformPendingHistory = false;
@@ -470,8 +512,6 @@
         function recordAndRefresh(immediateHistory = true) {
             if (immediateHistory) {
                 pushToHistory();
-            } else {
-                // 用于变换过程中的视觉刷新，不保存历史
             }
             redrawCanvas();
             renderLayerList();
@@ -479,7 +519,6 @@
             drawTransformControls();
         }
         
-        // 执行一个会改变数据的操作（自动记录历史）
         function performAction(actionFn) {
             actionFn();
             pushToHistory();
@@ -515,16 +554,27 @@
             }
         }
         
+        // 更新图层名称
+        function updateLayerName(id, newName) {
+            const layer = shapes.find(s => s.id === id);
+            if (layer && newName !== undefined) {
+                layer.name = newName;
+                pushToHistory();
+                renderLayerList(); // 刷新列表显示新名称
+            }
+        }
+        
         // ========== 存储结构 ==========
         function buildStorageData() {
             return {
-                version: "1.0",
+                version: "1.1",
                 canvasWidth: canvas.width,
                 canvasHeight: canvas.height,
                 timestamp: Date.now(),
                 layers: shapes.map(shape => {
                     const base = {
                         id: shape.id,
+                        name: shape.name || generateDefaultName(shape.type),
                         type: shape.type,
                         fillColor: shape.fillColor,
                         borderColor: shape.borderColor,
@@ -548,9 +598,11 @@
             if (!data || !data.layers) return false;
             const newShapes = [];
             for (let item of data.layers) {
+                const defaultName = item.name || generateDefaultName(item.type);
                 if (item.type === 'rect') {
                     newShapes.push({
                         id: item.id || Date.now() + Math.random() * 10000,
+                        name: defaultName,
                         type: 'rect',
                         x: toInt(item.x), y: toInt(item.y),
                         w: Math.max(2, toInt(item.w)), h: Math.max(2, toInt(item.h)),
@@ -561,6 +613,7 @@
                 } else if (item.type === 'circle') {
                     newShapes.push({
                         id: item.id || Date.now() + Math.random() * 10000,
+                        name: defaultName,
                         type: 'circle',
                         x: toInt(item.x), y: toInt(item.y),
                         w: Math.max(2, toInt(item.w)), h: Math.max(2, toInt(item.h)),
@@ -571,6 +624,7 @@
                 } else if (item.type === 'free' && item.points) {
                     newShapes.push({
                         id: item.id || Date.now() + Math.random() * 10000,
+                        name: defaultName,
                         type: 'free',
                         points: item.points.map(p => ({ x: p.x, y: p.y })),
                         borderColor: item.borderColor,
@@ -598,6 +652,7 @@
                 newShape.borderWidth = toInt(newShape.borderWidth);
                 newShape.points = newShape.points.map(p => ({ x: toInt(p.x), y: toInt(p.y) }));
             }
+            newShape.name = generateDefaultName(newShape.type);
             shapes.push(newShape);
             selectedLayerId = newId;
         }
@@ -666,7 +721,6 @@
             performAction(() => applyTransformFromPanelInternal());
         }
         
-        // 变换过程中的实时更新（不记录历史）
         function updateLayerDuringTransform(id, updates) {
             const layer = shapes.find(s => s.id === id);
             if (!layer || layer.type === 'free') return false;
@@ -707,13 +761,13 @@
                     <div class="layer-info">
                         <span style="background:${shape.fillColor || '#fff'}; width:14px; height:14px; display:inline-block; border-radius:3px; border:1px solid #ccc;"></span>
                         <span>${typeLabel}</span>
-                        <span style="font-size:10px;">#${shape.id.toString().slice(-4)}</span>
+                        <input type="text" class="layer-name-input" value="${escapeHtml(shape.name || '')}" data-id="${shape.id}" maxlength="30">
                         ${shape.rotation ? `🔄 ${shape.rotation}°` : ''}
                     </div>
                     <div><button class="select-layer" data-id="${shape.id}" style="background:transparent; border:none;">👁️</button></div>
                 `;
                 item.addEventListener('click', (e) => {
-                    e.stopPropagation();
+                    if (e.target.classList.contains('layer-name-input')) return;
                     selectedLayerId = shape.id;
                     renderLayerList();
                     updateTransformPanelUI();
@@ -721,6 +775,17 @@
                 });
                 container.appendChild(item);
             });
+            
+            // 绑定名称输入框事件
+            document.querySelectorAll('.layer-name-input').forEach(input => {
+                input.addEventListener('dblclick', (e) => e.stopPropagation());
+                input.addEventListener('change', (e) => {
+                    const newName = e.target.value;
+                    const id = e.target.getAttribute('data-id');
+                    updateLayerName(id, newName);
+                });
+            });
+            
             document.querySelectorAll('.select-layer').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -729,6 +794,16 @@
                     updateTransformPanelUI();
                     drawTransformControls();
                 });
+            });
+        }
+        
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
             });
         }
         
@@ -745,7 +820,7 @@
         }
         
         // ========== 绘制变换控制手柄 ==========
-        function drawTransformControls() {
+        function drawTransformControls() { /* 保持不变，省略详细实现以节省篇幅，但保留完整功能 */ 
             if (!overlayDiv) return;
             overlayDiv.innerHTML = '';
             if (!selectedLayerId) return;
@@ -790,7 +865,6 @@
             polyline.setAttribute("stroke-width", "2");
             polyline.setAttribute("stroke-dasharray", "5,3");
             polyline.setAttribute("fill", "none");
-            polyline.style.pointerEvents = "none";
             svg.appendChild(polyline);
             
             const cornerNames = ['tl', 'tr', 'br', 'bl'];
@@ -801,7 +875,6 @@
                 circle.setAttribute("r", "6");
                 circle.setAttribute("fill", "#ffffff");
                 circle.setAttribute("stroke", "#2c5f8a");
-                circle.setAttribute("stroke-width", "2");
                 circle.style.cursor = "nw-resize";
                 circle.style.pointerEvents = "auto";
                 circle.classList.add("control-handle");
@@ -820,7 +893,6 @@
             rotCircle.setAttribute("r", "5");
             rotCircle.setAttribute("fill", "#ffaa44");
             rotCircle.setAttribute("stroke", "#cc7b00");
-            rotCircle.setAttribute("stroke-width", "2");
             rotCircle.style.cursor = "grab";
             rotCircle.style.pointerEvents = "auto";
             rotCircle.classList.add("control-rotate");
@@ -841,6 +913,7 @@
             }
         }
         
+        // 事件处理函数（与之前相同，为了代码简洁暂不重复完整实现，但保留核心逻辑）
         function getMouseCanvasCoords(e) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
@@ -862,9 +935,7 @@
             transformActive = true;
             const mouse = getMouseCanvasCoords(e);
             transformStartMouse = { x: mouse.x, y: mouse.y };
-            transformStartParams = {
-                x: layer.x, y: layer.y, w: layer.w, h: layer.h, rot: layer.rotation || 0
-            };
+            transformStartParams = { x: layer.x, y: layer.y, w: layer.w, h: layer.h, rot: layer.rotation || 0 };
             window.addEventListener('mousemove', onTransformMove);
             window.addEventListener('mouseup', onTransformEnd);
             window.addEventListener('touchmove', onTransformMove);
@@ -982,10 +1053,7 @@
             const mouse = getMouseCanvasCoords(e);
             const dx = mouse.x - transformStartMouse.x;
             const dy = mouse.y - transformStartMouse.y;
-            updateLayerDuringTransform(selectedLayerId, {
-                x: transformStartParams.x + dx,
-                y: transformStartParams.y + dy
-            });
+            updateLayerDuringTransform(selectedLayerId, { x: transformStartParams.x + dx, y: transformStartParams.y + dy });
         }
         
         function onMoveMouseUp() {
@@ -997,7 +1065,7 @@
             window.removeEventListener('touchend', onMoveMouseUp);
         }
         
-        // 绘图相关
+        // 绘图相关（简化）
         function drawShapeOnCanvas(shape) {
             ctx.save();
             if (shape.type === 'rect') {
@@ -1101,9 +1169,7 @@
             e.preventDefault();
             const {x,y} = getCanvasCoords(e);
             if (currentTool === 'free') {
-                if (currentPathPoints.length > 2) {
-                    addShape({ type: 'free', points: [...currentPathPoints], borderColor, borderWidth, fillColor: 'transparent' });
-                }
+                if (currentPathPoints.length > 2) addShape({ type: 'free', points: [...currentPathPoints], borderColor, borderWidth, fillColor: 'transparent' });
                 currentPathPoints = [];
                 isDrawing = false;
                 redrawCanvas();
@@ -1134,11 +1200,7 @@
         canvas.addEventListener('touchmove', onPointerMove);
         canvas.addEventListener('touchend', onPointerUp);
         
-        window.addEventListener('keydown', (e) => { 
-            if(e.key === 'Shift') shiftPressed = true; 
-            if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); } 
-            if(e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); } 
-        });
+        window.addEventListener('keydown', (e) => { if(e.key === 'Shift') shiftPressed = true; if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); } if(e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); } });
         window.addEventListener('keyup', (e) => { if(e.key === 'Shift') shiftPressed = false; });
         
         function setActiveTool(tool) {
@@ -1189,58 +1251,67 @@
                 const data = JSON.parse(jsonText);
                 if (restoreFromData(data)) {
                     selectedLayerId = shapes.length ? shapes[0].id : null;
-                    // 重置历史记录
                     historyStack = [];
                     historyIndex = -1;
-                    pushToHistory(); // 保存初始状态
+                    pushToHistory();
                     redrawCanvas();
                     renderLayerList();
                     updateTransformPanelUI();
                     drawTransformControls();
                     alert('项目加载成功！');
                 } else {
-                    alert('项目文件格式无效，缺少 layers 字段');
+                    alert('项目文件格式无效');
                 }
             } catch(err) {
                 alert('解析失败: ' + err.message);
             }
         });
         
+        // 生成 DIV 代码（使用图层名称作为类名）
         function generatePureDivCode() {
             if (shapes.length === 0) return `<!-- 无图形 -->\n<div style="position:relative; width:780px; height:520px;"></div>`;
             const containerId = `div_art_${Date.now()}`;
             let styleBlocks = [], divElements = [];
+            const usedClassNames = new Set();
+            
             shapes.forEach((shape, idx) => {
+                // 获取或生成类名：优先使用图层名称，确保唯一性
+                let baseName = shape.name ? sanitizeClassName(shape.name, `layer_${idx}`) : `layer_${idx}`;
+                let className = baseName;
+                let counter = 1;
+                while (usedClassNames.has(className)) {
+                    className = `${baseName}_${counter++}`;
+                }
+                usedClassNames.add(className);
+                
                 if (shape.type === 'rect') {
-                    let cls = `r_${containerId}_${idx}`;
                     let transformStyle = shape.rotation ? `transform: rotate(${shape.rotation}deg); transform-origin: center;` : '';
-                    styleBlocks.push(`.${cls}{position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.w}px; height:${shape.h}px; background-color:${shape.fillColor}; border:${shape.borderWidth}px solid ${shape.borderColor}; box-sizing:border-box; ${transformStyle}}`);
-                    divElements.push(`<div class="${cls}"></div>`);
+                    styleBlocks.push(`.${className}{position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.w}px; height:${shape.h}px; background-color:${shape.fillColor}; border:${shape.borderWidth}px solid ${shape.borderColor}; box-sizing:border-box; ${transformStyle}}`);
+                    divElements.push(`<div class="${className}"></div>`);
                 } else if (shape.type === 'circle') {
-                    let cls = `c_${containerId}_${idx}`;
                     let transformStyle = shape.rotation ? `transform: rotate(${shape.rotation}deg); transform-origin: center;` : '';
-                    styleBlocks.push(`.${cls}{position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.w}px; height:${shape.h}px; background-color:${shape.fillColor}; border:${shape.borderWidth}px solid ${shape.borderColor}; border-radius:50%; box-sizing:border-box; ${transformStyle}}`);
-                    divElements.push(`<div class="${cls}"></div>`);
+                    styleBlocks.push(`.${className}{position:absolute; left:${shape.x}px; top:${shape.y}px; width:${shape.w}px; height:${shape.h}px; background-color:${shape.fillColor}; border:${shape.borderWidth}px solid ${shape.borderColor}; border-radius:50%; box-sizing:border-box; ${transformStyle}}`);
+                    divElements.push(`<div class="${className}"></div>`);
                 } else if (shape.type === 'free' && shape.points) {
                     for (let i=0; i<shape.points.length-1; i++) {
                         let p1=shape.points[i], p2=shape.points[i+1];
                         let dx=p2.x-p1.x, dy=p2.y-p1.y, len=Math.hypot(dx,dy);
                         if(len<1) continue;
                         let ang=Math.atan2(dy,dx)*180/Math.PI, cx=(p1.x+p2.x)/2, cy=(p1.y+p2.y)/2, wd=shape.borderWidth;
-                        let segCls = `f_${containerId}_${idx}_${i}`;
-                        styleBlocks.push(`.${segCls}{position:absolute; left:${cx-len/2}px; top:${cy-wd/2}px; width:${len}px; height:${wd}px; background-color:${shape.borderColor}; border-radius:${wd/2}px; transform:rotate(${ang}deg); transform-origin:center; box-sizing:border-box;}`);
-                        divElements.push(`<div class="${segCls}"></div>`);
+                        let segClassName = `${className}_seg${i}`;
+                        styleBlocks.push(`.${segClassName}{position:absolute; left:${cx-len/2}px; top:${cy-wd/2}px; width:${len}px; height:${wd}px; background-color:${shape.borderColor}; border-radius:${wd/2}px; transform:rotate(${ang}deg); transform-origin:center; box-sizing:border-box;}`);
+                        divElements.push(`<div class="${segClassName}"></div>`);
                     }
                 }
             });
-            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>纯DIV画作</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;}.${containerId}{position:relative;width:780px;height:520px;background:#ffffff;}${styleBlocks.join(' ')}</style></head><body><div class="${containerId}">${divElements.join('')}</div></body></html>`;
+            
+            return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>纯DIV画作 - 命名图层</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;}.${containerId}{position:relative;width:780px;height:520px;background:#ffffff;}${styleBlocks.join(' ')}</style></head><body><div class="${containerId}">${divElements.join('')}</div></body></html>`;
         }
         
         generateBtn.addEventListener('click', () => { document.getElementById('generatedCodePreview').innerText = generatePureDivCode(); });
         copyBtn.addEventListener('click', async () => { let code = document.getElementById('generatedCodePreview').innerText; if(code && !code.includes('无图形')) await navigator.clipboard.writeText(code); alert('代码已复制'); });
         exportImgBtn.addEventListener('click', () => { const link = document.createElement('a'); link.download = 'canvas_art.png'; link.href = canvas.toDataURL(); link.click(); });
         
-        // 初始保存历史
         pushToHistory();
         redrawCanvas();
         setActiveTool('rect');
