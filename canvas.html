@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>专业画板 - 直接操控图层 | 拖拽/缩放/旋转 | 整数约束 | 保存加载</title>
+    <title>专业画板 - 修复撤销 | 直接操控图层 | 整数约束</title>
     <style>
         * {
             box-sizing: border-box;
@@ -115,29 +115,12 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
 
-        /* 操控层 SVG 覆盖 */
-        .transform-controls {
-            position: absolute;
-            top: 0;
-            left: 0;
-            pointer-events: none;
-        }
-        .transform-controls svg {
-            pointer-events: none;
-        }
-        .control-handle {
-            cursor: pointer;
-            pointer-events: auto;
-        }
-        .control-rotate {
-            cursor: grab;
-        }
-
         .action-buttons {
             display: flex;
             gap: 10px;
             margin-top: 16px;
             flex-wrap: wrap;
+            align-items: center;
         }
 
         .btn {
@@ -155,6 +138,17 @@
             background: #2c5f8a;
             color: white;
             border: none;
+        }
+
+        .load-textarea {
+            flex: 1;
+            min-width: 200px;
+            padding: 5px 10px;
+            border-radius: 36px;
+            border: 1px solid #cbd5e1;
+            font-size: 0.7rem;
+            font-family: monospace;
+            background: white;
         }
 
         .layers-panel {
@@ -280,19 +274,6 @@
             color: #cbd5e6;
             text-align: center;
         }
-
-        .file-input-label {
-            background: #334155;
-            padding: 5px 12px;
-            border-radius: 30px;
-            color: white;
-            font-size: 0.7rem;
-            cursor: pointer;
-            display: inline-block;
-        }
-        input[type="file"] {
-            display: none;
-        }
     </style>
 </head>
 <body>
@@ -331,11 +312,12 @@
                 <button class="btn btn-primary" id="generateDivCodeBtn">✨ 生成纯DIV代码</button>
                 <button class="btn" id="exportImageBtn">📸 保存图片</button>
                 <button class="btn" id="saveProjectBtn">💾 保存项目(.json)</button>
-                <label class="file-input-label" id="loadLabel">📂 加载项目</label>
-                <input type="file" id="loadFileInput" accept=".json">
+                <input type="text" id="loadJsonInput" class="load-textarea" placeholder="粘贴 JSON 项目数据，然后点击下方按钮加载">
+                <button class="btn" id="loadFromTextBtn">📂 从文本框加载</button>
             </div>
             <div class="badge-note" style="margin-top: 10px; background:#eef2ff; color:#1e293b;">
-                🖱️ 选中图层后，可直接拖拽移动、拖拽四角缩放、拖拽顶部圆圈旋转。所有数值自动取整。
+                🖱️ 选中图层后，可直接拖拽移动、缩放、旋转。拖拽结束后才记录撤销。<br>
+                ✅ 撤销/重做功能已修复：每次绘图、删除、上移下移、面板变换都会正确记录历史。
             </div>
         </div>
 
@@ -343,8 +325,8 @@
             <div class="layers-header">
                 <h4 style="margin:0;">🎚️ 图层 & 变换</h4>
                 <div style="display: flex; gap: 5px;">
-                    <button class="small-btn" id="undoBtn" title="撤销">↩️</button>
-                    <button class="small-btn" id="redoBtn" title="重做">↪️</button>
+                    <button class="small-btn" id="undoBtn" title="撤销 Ctrl+Z">↩️</button>
+                    <button class="small-btn" id="redoBtn" title="重做 Ctrl+Y">↪️</button>
                 </div>
             </div>
             <div class="layer-list" id="layerListContainer">
@@ -381,7 +363,7 @@
             </div>
             <div class="code-box">
                 <pre id="generatedCodePreview">// 直接操控图层：拖拽移动、角点缩放、顶部旋转
-// 所有数值均为整数，支持保存/加载</pre>
+// 撤销/重做已修复：每次操作都会正确记录历史</pre>
             </div>
         </div>
     </div>
@@ -400,9 +382,14 @@
         let shapes = [];
         let selectedLayerId = null;
         
+        // 历史记录系统
         let historyStack = [];
         let historyIndex = -1;
         const MAX_HISTORY = 50;
+        
+        // 变换拖拽过程中的临时状态（不记录历史）
+        let isTransforming = false;
+        let transformPendingHistory = false;
         
         let currentTool = 'rect';
         let fillColor = '#ffb3da';
@@ -414,12 +401,11 @@
         let startX = 0, startY = 0;
         let currentPathPoints = [];
         
-        // 直接操控相关变量
         let transformActive = false;
-        let transformType = null; // 'move', 'scale', 'rotate'
+        let transformType = null;
         let transformStartMouse = { x: 0, y: 0 };
         let transformStartParams = { x: 0, y: 0, w: 0, h: 0, rot: 0 };
-        let currentHandleCorner = null; // 'tl', 'tr', 'br', 'bl'
+        let currentHandleCorner = null;
         
         // DOM 元素
         const rectBtn = document.getElementById('tool-rect');
@@ -446,77 +432,57 @@
         const rotateDegInput = document.getElementById('rotateDeg');
         const applyTransformBtn = document.getElementById('applyTransformBtn');
         const saveProjectBtn = document.getElementById('saveProjectBtn');
-        const loadFileInput = document.getElementById('loadFileInput');
+        const loadFromTextBtn = document.getElementById('loadFromTextBtn');
+        const loadJsonInput = document.getElementById('loadJsonInput');
         
-        // ========== 存储与历史 ==========
-        function buildStorageData() {
-            return {
-                version: "1.0",
-                canvasWidth: canvas.width,
-                canvasHeight: canvas.height,
-                timestamp: Date.now(),
-                layers: shapes.map(shape => ({
-                    id: shape.id,
-                    type: shape.type,
-                    fillColor: shape.fillColor,
-                    borderColor: shape.borderColor,
-                    borderWidth: shape.borderWidth,
-                    rotation: shape.rotation || 0,
-                    ...(shape.type !== 'free' ? { x: shape.x, y: shape.y, w: shape.w, h: shape.h } : {}),
-                    ...(shape.type === 'free' ? { points: shape.points } : {})
-                }))
-            };
-        }
-        
-        function restoreFromData(data) {
-            if (!data || !data.layers) return false;
-            const newShapes = [];
-            for (let item of data.layers) {
-                if (item.type === 'rect') {
-                    newShapes.push({
-                        id: item.id,
-                        type: 'rect',
-                        x: toInt(item.x), y: toInt(item.y),
-                        w: Math.max(2, toInt(item.w)), h: Math.max(2, toInt(item.h)),
-                        rotation: toInt(item.rotation || 0),
-                        fillColor: item.fillColor, borderColor: item.borderColor,
-                        borderWidth: toInt(item.borderWidth || 3)
-                    });
-                } else if (item.type === 'circle') {
-                    newShapes.push({
-                        id: item.id,
-                        type: 'circle',
-                        x: toInt(item.x), y: toInt(item.y),
-                        w: Math.max(2, toInt(item.w)), h: Math.max(2, toInt(item.h)),
-                        rotation: toInt(item.rotation || 0),
-                        fillColor: item.fillColor, borderColor: item.borderColor,
-                        borderWidth: toInt(item.borderWidth || 3)
-                    });
-                } else if (item.type === 'free' && item.points) {
-                    newShapes.push({
-                        id: item.id,
-                        type: 'free',
-                        points: item.points.map(p => ({ x: p.x, y: p.y })),
-                        borderColor: item.borderColor,
-                        borderWidth: toInt(item.borderWidth || 3),
-                        fillColor: 'transparent'
-                    });
-                }
+        // ========== 核心历史操作 ==========
+        function pushToHistory() {
+            // 如果正在变换拖拽中，延迟保存
+            if (isTransforming) {
+                transformPendingHistory = true;
+                return;
             }
-            shapes = newShapes;
-            return true;
-        }
-        
-        function saveToHistory() {
             const copy = JSON.parse(JSON.stringify(shapes));
-            if (historyIndex < historyStack.length - 1) historyStack = historyStack.slice(0, historyIndex + 1);
+            // 如果当前位置不是最后，删除后面的记录
+            if (historyIndex < historyStack.length - 1) {
+                historyStack = historyStack.slice(0, historyIndex + 1);
+            }
             historyStack.push(copy);
             if (historyStack.length > MAX_HISTORY) historyStack.shift();
             historyIndex = historyStack.length - 1;
+            transformPendingHistory = false;
         }
         
-        function recordAndRefresh() {
-            saveToHistory();
+        // 变换结束后调用，保存最终状态
+        function commitTransformHistory() {
+            if (transformPendingHistory) {
+                transformPendingHistory = false;
+                const copy = JSON.parse(JSON.stringify(shapes));
+                if (historyIndex < historyStack.length - 1) {
+                    historyStack = historyStack.slice(0, historyIndex + 1);
+                }
+                historyStack.push(copy);
+                if (historyStack.length > MAX_HISTORY) historyStack.shift();
+                historyIndex = historyStack.length - 1;
+            }
+        }
+        
+        function recordAndRefresh(immediateHistory = true) {
+            if (immediateHistory) {
+                pushToHistory();
+            } else {
+                // 用于变换过程中的视觉刷新，不保存历史
+            }
+            redrawCanvas();
+            renderLayerList();
+            updateTransformPanelUI();
+            drawTransformControls();
+        }
+        
+        // 执行一个会改变数据的操作（自动记录历史）
+        function performAction(actionFn) {
+            actionFn();
+            pushToHistory();
             redrawCanvas();
             renderLayerList();
             updateTransformPanelUI();
@@ -524,6 +490,7 @@
         }
         
         function undo() {
+            if (isTransforming) return;
             if (historyIndex > 0) {
                 historyIndex--;
                 shapes = JSON.parse(JSON.stringify(historyStack[historyIndex]));
@@ -536,6 +503,7 @@
         }
         
         function redo() {
+            if (isTransforming) return;
             if (historyIndex < historyStack.length - 1) {
                 historyIndex++;
                 shapes = JSON.parse(JSON.stringify(historyStack[historyIndex]));
@@ -547,7 +515,76 @@
             }
         }
         
-        function addShape(shapeData) {
+        // ========== 存储结构 ==========
+        function buildStorageData() {
+            return {
+                version: "1.0",
+                canvasWidth: canvas.width,
+                canvasHeight: canvas.height,
+                timestamp: Date.now(),
+                layers: shapes.map(shape => {
+                    const base = {
+                        id: shape.id,
+                        type: shape.type,
+                        fillColor: shape.fillColor,
+                        borderColor: shape.borderColor,
+                        borderWidth: shape.borderWidth,
+                        rotation: shape.rotation || 0,
+                    };
+                    if (shape.type !== 'free') {
+                        base.x = shape.x;
+                        base.y = shape.y;
+                        base.w = shape.w;
+                        base.h = shape.h;
+                    } else {
+                        base.points = shape.points;
+                    }
+                    return base;
+                })
+            };
+        }
+        
+        function restoreFromData(data) {
+            if (!data || !data.layers) return false;
+            const newShapes = [];
+            for (let item of data.layers) {
+                if (item.type === 'rect') {
+                    newShapes.push({
+                        id: item.id || Date.now() + Math.random() * 10000,
+                        type: 'rect',
+                        x: toInt(item.x), y: toInt(item.y),
+                        w: Math.max(2, toInt(item.w)), h: Math.max(2, toInt(item.h)),
+                        rotation: toInt(item.rotation || 0),
+                        fillColor: item.fillColor, borderColor: item.borderColor,
+                        borderWidth: toInt(item.borderWidth || 3)
+                    });
+                } else if (item.type === 'circle') {
+                    newShapes.push({
+                        id: item.id || Date.now() + Math.random() * 10000,
+                        type: 'circle',
+                        x: toInt(item.x), y: toInt(item.y),
+                        w: Math.max(2, toInt(item.w)), h: Math.max(2, toInt(item.h)),
+                        rotation: toInt(item.rotation || 0),
+                        fillColor: item.fillColor, borderColor: item.borderColor,
+                        borderWidth: toInt(item.borderWidth || 3)
+                    });
+                } else if (item.type === 'free' && item.points) {
+                    newShapes.push({
+                        id: item.id || Date.now() + Math.random() * 10000,
+                        type: 'free',
+                        points: item.points.map(p => ({ x: p.x, y: p.y })),
+                        borderColor: item.borderColor,
+                        borderWidth: toInt(item.borderWidth || 3),
+                        fillColor: 'transparent'
+                    });
+                }
+            }
+            shapes = newShapes;
+            return true;
+        }
+        
+        // ========== 图形操作 ==========
+        function addShapeInternal(shapeData) {
             const newId = Date.now() + Math.random() * 10000;
             let newShape = { ...shapeData, id: newId };
             if (newShape.type !== 'free') {
@@ -562,14 +599,75 @@
                 newShape.points = newShape.points.map(p => ({ x: toInt(p.x), y: toInt(p.y) }));
             }
             shapes.push(newShape);
-            recordAndRefresh();
             selectedLayerId = newId;
-            renderLayerList();
-            updateTransformPanelUI();
+        }
+        
+        function addShape(shapeData) {
+            performAction(() => addShapeInternal(shapeData));
+        }
+        
+        function deleteLayerInternal() {
+            if (selectedLayerId) {
+                shapes = shapes.filter(s => s.id !== selectedLayerId);
+                selectedLayerId = shapes.length ? shapes[0]?.id : null;
+            }
+        }
+        
+        function deleteSelectedLayer() {
+            performAction(() => deleteLayerInternal());
+        }
+        
+        function moveLayerUpInternal() {
+            if (!selectedLayerId) return;
+            const idx = shapes.findIndex(s => s.id === selectedLayerId);
+            if (idx < shapes.length - 1) {
+                [shapes[idx], shapes[idx+1]] = [shapes[idx+1], shapes[idx]];
+            }
+        }
+        
+        function moveLayerUp() {
+            performAction(() => moveLayerUpInternal());
+        }
+        
+        function moveLayerDownInternal() {
+            if (!selectedLayerId) return;
+            const idx = shapes.findIndex(s => s.id === selectedLayerId);
+            if (idx > 0) {
+                [shapes[idx], shapes[idx-1]] = [shapes[idx-1], shapes[idx]];
+            }
+        }
+        
+        function moveLayerDown() {
+            performAction(() => moveLayerDownInternal());
+        }
+        
+        function clearAllInternal() {
+            shapes = [];
+            selectedLayerId = null;
+        }
+        
+        function clearCanvas() {
+            performAction(() => clearAllInternal());
             drawTransformControls();
         }
         
-        function updateLayerAfterTransform(id, updates) {
+        function applyTransformFromPanelInternal() {
+            if (!selectedLayerId) return;
+            const layer = shapes.find(s => s.id === selectedLayerId);
+            if (!layer || layer.type === 'free') return;
+            layer.x = toInt(parseFloat(posXInput.value));
+            layer.y = toInt(parseFloat(posYInput.value));
+            layer.w = Math.max(2, toInt(parseFloat(scaleWInput.value)));
+            layer.h = Math.max(2, toInt(parseFloat(scaleHInput.value)));
+            layer.rotation = toInt(parseFloat(rotateDegInput.value)) % 360;
+        }
+        
+        function applyTransformFromPanel() {
+            performAction(() => applyTransformFromPanelInternal());
+        }
+        
+        // 变换过程中的实时更新（不记录历史）
+        function updateLayerDuringTransform(id, updates) {
             const layer = shapes.find(s => s.id === id);
             if (!layer || layer.type === 'free') return false;
             if (updates.x !== undefined) layer.x = toInt(updates.x);
@@ -577,34 +675,19 @@
             if (updates.w !== undefined) layer.w = Math.max(2, toInt(updates.w));
             if (updates.h !== undefined) layer.h = Math.max(2, toInt(updates.h));
             if (updates.rotation !== undefined) layer.rotation = toInt(updates.rotation) % 360;
-            recordAndRefresh();
+            redrawCanvas();
+            drawTransformControls();
+            updateTransformPanelUI();
             return true;
         }
         
-        function deleteSelectedLayer() {
-            if (selectedLayerId) {
-                shapes = shapes.filter(s => s.id !== selectedLayerId);
-                selectedLayerId = shapes.length ? shapes[0]?.id : null;
-                recordAndRefresh();
+        function finalizeTransform() {
+            if (isTransforming) {
+                isTransforming = false;
+                commitTransformHistory();
+                renderLayerList();
+                updateTransformPanelUI();
                 drawTransformControls();
-            }
-        }
-        
-        function moveLayerUp() {
-            if (!selectedLayerId) return;
-            const idx = shapes.findIndex(s => s.id === selectedLayerId);
-            if (idx < shapes.length - 1) {
-                [shapes[idx], shapes[idx+1]] = [shapes[idx+1], shapes[idx]];
-                recordAndRefresh();
-            }
-        }
-        
-        function moveLayerDown() {
-            if (!selectedLayerId) return;
-            const idx = shapes.findIndex(s => s.id === selectedLayerId);
-            if (idx > 0) {
-                [shapes[idx], shapes[idx-1]] = [shapes[idx-1], shapes[idx]];
-                recordAndRefresh();
             }
         }
         
@@ -661,19 +744,6 @@
             rotateDegInput.value = layer.rotation || 0;
         }
         
-        function applyTransformFromPanel() {
-            if (!selectedLayerId) return;
-            const layer = shapes.find(s => s.id === selectedLayerId);
-            if (!layer || layer.type === 'free') return;
-            updateLayerAfterTransform(selectedLayerId, {
-                x: toInt(parseFloat(posXInput.value)),
-                y: toInt(parseFloat(posYInput.value)),
-                w: Math.max(2, toInt(parseFloat(scaleWInput.value))),
-                h: Math.max(2, toInt(parseFloat(scaleHInput.value))),
-                rotation: toInt(parseFloat(rotateDegInput.value))
-            });
-        }
-        
         // ========== 绘制变换控制手柄 ==========
         function drawTransformControls() {
             if (!overlayDiv) return;
@@ -686,7 +756,6 @@
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
             
-            // 获取图层四个角的世界坐标 (考虑旋转)
             const cx = layer.x + layer.w/2;
             const cy = layer.y + layer.h/2;
             const rad = (layer.rotation || 0) * Math.PI / 180;
@@ -695,17 +764,16 @@
             const halfW = layer.w/2;
             const halfH = layer.h/2;
             const corners = [
-                { x: -halfW, y: -halfH }, // TL
-                { x:  halfW, y: -halfH }, // TR
-                { x:  halfW, y:  halfH }, // BR
-                { x: -halfW, y:  halfH }  // BL
+                { x: -halfW, y: -halfH },
+                { x:  halfW, y: -halfH },
+                { x:  halfW, y:  halfH },
+                { x: -halfW, y:  halfH }
             ];
             const worldCorners = corners.map(p => ({
                 x: cx + p.x * cos - p.y * sin,
                 y: cy + p.x * sin + p.y * cos
             }));
             
-            // 创建SVG覆盖层
             const svgNS = "http://www.w3.org/2000/svg";
             const svg = document.createElementNS(svgNS, "svg");
             svg.style.position = "absolute";
@@ -715,8 +783,7 @@
             svg.style.height = "100%";
             svg.style.pointerEvents = "none";
             
-            // 绘制边框
-            const points = worldCorners.map(p => `${p.x * (canvas.width/rect.width)},${p.y * (canvas.height/rect.height)}`).join(" ");
+            const points = worldCorners.map(p => `${p.x * scaleX},${p.y * scaleY}`).join(" ");
             const polyline = document.createElementNS(svgNS, "polyline");
             polyline.setAttribute("points", points + " " + points.split(" ")[0] + "," + points.split(" ")[1]);
             polyline.setAttribute("stroke", "#2c5f8a");
@@ -726,14 +793,11 @@
             polyline.style.pointerEvents = "none";
             svg.appendChild(polyline);
             
-            // 四个角点手柄 (缩放)
             const cornerNames = ['tl', 'tr', 'br', 'bl'];
             worldCorners.forEach((corner, idx) => {
                 const circle = document.createElementNS(svgNS, "circle");
-                const cxScreen = corner.x * (canvas.width/rect.width);
-                const cyScreen = corner.y * (canvas.height/rect.height);
-                circle.setAttribute("cx", cxScreen);
-                circle.setAttribute("cy", cyScreen);
+                circle.setAttribute("cx", corner.x * scaleX);
+                circle.setAttribute("cy", corner.y * scaleY);
                 circle.setAttribute("r", "6");
                 circle.setAttribute("fill", "#ffffff");
                 circle.setAttribute("stroke", "#2c5f8a");
@@ -745,15 +809,14 @@
                 svg.appendChild(circle);
             });
             
-            // 顶部旋转手柄 (中心上方)
             const topMidLocal = { x: 0, y: -halfH - 12 };
             const topMidWorld = {
                 x: cx + topMidLocal.x * cos - topMidLocal.y * sin,
                 y: cy + topMidLocal.x * sin + topMidLocal.y * cos
             };
             const rotCircle = document.createElementNS(svgNS, "circle");
-            rotCircle.setAttribute("cx", topMidWorld.x * (canvas.width/rect.width));
-            rotCircle.setAttribute("cy", topMidWorld.y * (canvas.height/rect.height));
+            rotCircle.setAttribute("cx", topMidWorld.x * scaleX);
+            rotCircle.setAttribute("cy", topMidWorld.y * scaleY);
             rotCircle.setAttribute("r", "5");
             rotCircle.setAttribute("fill", "#ffaa44");
             rotCircle.setAttribute("stroke", "#cc7b00");
@@ -766,7 +829,6 @@
             
             overlayDiv.appendChild(svg);
             
-            // 绑定事件
             const handles = overlayDiv.querySelectorAll('.control-handle');
             const rotateHandle = overlayDiv.querySelector('.control-rotate');
             handles.forEach(handle => {
@@ -794,9 +856,9 @@
             if (!selectedLayerId) return;
             const layer = shapes.find(s => s.id === selectedLayerId);
             if (!layer || layer.type === 'free') return;
-            const handle = e.target.getAttribute('data-handle');
             transformType = 'scale';
-            currentHandleCorner = handle;
+            currentHandleCorner = e.target.getAttribute('data-handle');
+            isTransforming = true;
             transformActive = true;
             const mouse = getMouseCanvasCoords(e);
             transformStartMouse = { x: mouse.x, y: mouse.y };
@@ -815,6 +877,7 @@
             const layer = shapes.find(s => s.id === selectedLayerId);
             if (!layer || layer.type === 'free') return;
             transformType = 'rotate';
+            isTransforming = true;
             transformActive = true;
             const mouse = getMouseCanvasCoords(e);
             const cx = layer.x + layer.w/2;
@@ -860,7 +923,7 @@
                     newX = transformStartParams.x + dx;
                     newY = transformStartParams.y;
                 }
-                updateLayerAfterTransform(selectedLayerId, { x: newX, y: newY, w: newW, h: newH });
+                updateLayerDuringTransform(selectedLayerId, { x: newX, y: newY, w: newW, h: newH });
             } else if (transformType === 'rotate') {
                 const cx = transformStartParams.cx;
                 const cy = transformStartParams.cy;
@@ -868,12 +931,13 @@
                 let delta = currentAngle - transformStartMouse.x;
                 let newRot = transformStartParams.rot + delta;
                 newRot = ((newRot % 360) + 360) % 360;
-                updateLayerAfterTransform(selectedLayerId, { rotation: newRot });
+                updateLayerDuringTransform(selectedLayerId, { rotation: newRot });
             }
         }
         
         function onTransformEnd() {
             transformActive = false;
+            finalizeTransform();
             window.removeEventListener('mousemove', onTransformMove);
             window.removeEventListener('mouseup', onTransformEnd);
             window.removeEventListener('touchmove', onTransformMove);
@@ -881,17 +945,12 @@
             drawTransformControls();
         }
         
-        // 添加画板移动拖拽 (移动图层)
         function onCanvasMouseDown(e) {
-            if (currentTool !== 'rect' && currentTool !== 'circle' && currentTool !== 'free') return;
-            // 如果点击在操控手柄上，不启动绘图
             if (e.target.classList && (e.target.classList.contains('control-handle') || e.target.classList.contains('control-rotate'))) return;
             if (selectedLayerId) {
-                // 尝试拖拽移动选中图层 (只有点击在图形内部时)
                 const mouse = getMouseCanvasCoords(e);
                 const layer = shapes.find(s => s.id === selectedLayerId);
                 if (layer && layer.type !== 'free') {
-                    // 简单碰撞检测
                     const cx = layer.x + layer.w/2;
                     const cy = layer.y + layer.h/2;
                     const rad = (layer.rotation || 0) * Math.PI / 180;
@@ -902,6 +961,7 @@
                     if (Math.abs(lx) <= layer.w/2 && Math.abs(ly) <= layer.h/2) {
                         e.preventDefault();
                         transformType = 'move';
+                        isTransforming = true;
                         transformActive = true;
                         transformStartMouse = { x: mouse.x, y: mouse.y };
                         transformStartParams = { x: layer.x, y: layer.y };
@@ -913,7 +973,6 @@
                     }
                 }
             }
-            // 否则正常绘图
             onPointerDown(e);
         }
         
@@ -923,7 +982,7 @@
             const mouse = getMouseCanvasCoords(e);
             const dx = mouse.x - transformStartMouse.x;
             const dy = mouse.y - transformStartMouse.y;
-            updateLayerAfterTransform(selectedLayerId, {
+            updateLayerDuringTransform(selectedLayerId, {
                 x: transformStartParams.x + dx,
                 y: transformStartParams.y + dy
             });
@@ -931,13 +990,14 @@
         
         function onMoveMouseUp() {
             transformActive = false;
+            finalizeTransform();
             window.removeEventListener('mousemove', onMoveMouseMove);
             window.removeEventListener('mouseup', onMoveMouseUp);
             window.removeEventListener('touchmove', onMoveMouseMove);
             window.removeEventListener('touchend', onMoveMouseUp);
         }
         
-        // 绘图相关 (原有)
+        // 绘图相关
         function drawShapeOnCanvas(shape) {
             ctx.save();
             if (shape.type === 'rect') {
@@ -1041,7 +1101,9 @@
             e.preventDefault();
             const {x,y} = getCanvasCoords(e);
             if (currentTool === 'free') {
-                if (currentPathPoints.length > 2) addShape({ type: 'free', points: [...currentPathPoints], borderColor, borderWidth, fillColor: 'transparent' });
+                if (currentPathPoints.length > 2) {
+                    addShape({ type: 'free', points: [...currentPathPoints], borderColor, borderWidth, fillColor: 'transparent' });
+                }
                 currentPathPoints = [];
                 isDrawing = false;
                 redrawCanvas();
@@ -1065,10 +1127,6 @@
             }
         }
         
-        // 重新绑定事件，优先处理拖拽图层移动
-        canvas.removeEventListener('mousedown', onPointerDown);
-        canvas.removeEventListener('mousemove', onPointerMove);
-        canvas.removeEventListener('mouseup', onPointerUp);
         canvas.addEventListener('mousedown', onCanvasMouseDown);
         canvas.addEventListener('mousemove', onPointerMove);
         canvas.addEventListener('mouseup', onPointerUp);
@@ -1076,7 +1134,11 @@
         canvas.addEventListener('touchmove', onPointerMove);
         canvas.addEventListener('touchend', onPointerUp);
         
-        window.addEventListener('keydown', (e) => { if(e.key === 'Shift') shiftPressed = true; if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); } if(e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); } });
+        window.addEventListener('keydown', (e) => { 
+            if(e.key === 'Shift') shiftPressed = true; 
+            if(e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); } 
+            if(e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); } 
+        });
         window.addEventListener('keyup', (e) => { if(e.key === 'Shift') shiftPressed = false; });
         
         function setActiveTool(tool) {
@@ -1094,7 +1156,7 @@
         fillPicker.addEventListener('change', e => fillColor = e.target.value);
         borderPicker.addEventListener('change', e => borderColor = e.target.value);
         borderWidthInput.addEventListener('change', () => borderWidth = toInt(parseFloat(borderWidthInput.value) || 3));
-        clearBtn.addEventListener('click', () => { shapes = []; selectedLayerId = null; recordAndRefresh(); drawTransformControls(); });
+        clearBtn.addEventListener('click', clearCanvas);
         undoBtn.addEventListener('click', undo);
         redoBtn.addEventListener('click', redo);
         deleteLayerBtn.addEventListener('click', deleteSelectedLayer);
@@ -1102,8 +1164,47 @@
         moveDownBtn.addEventListener('click', moveLayerDown);
         deselectBtn.addEventListener('click', () => { selectedLayerId = null; renderLayerList(); updateTransformPanelUI(); drawTransformControls(); });
         applyTransformBtn.addEventListener('click', applyTransformFromPanel);
-        saveProjectBtn.addEventListener('click', () => { const data = buildStorageData(); const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'}); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `project_${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href); });
-        loadFileInput.addEventListener('change', (e) => { if(e.target.files[0]) { const reader = new FileReader(); reader.onload = (ev) => { try { if(restoreFromData(JSON.parse(ev.target.result))) { selectedLayerId = shapes.length ? shapes[0].id : null; recordAndRefresh(); drawTransformControls(); } else alert('加载失败'); } catch(err) { alert('文件解析错误'); } }; reader.readAsText(e.target.files[0]); e.target.value = ''; } });
+        
+        // 保存项目
+        saveProjectBtn.addEventListener('click', () => {
+            const data = buildStorageData();
+            const jsonStr = JSON.stringify(data, null, 2);
+            const blob = new Blob([jsonStr], {type: 'application/json'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `project_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            loadJsonInput.value = jsonStr;
+        });
+        
+        // 从文本框加载项目
+        loadFromTextBtn.addEventListener('click', () => {
+            const jsonText = loadJsonInput.value.trim();
+            if (!jsonText) {
+                alert('请在文本框中粘贴 JSON 项目数据');
+                return;
+            }
+            try {
+                const data = JSON.parse(jsonText);
+                if (restoreFromData(data)) {
+                    selectedLayerId = shapes.length ? shapes[0].id : null;
+                    // 重置历史记录
+                    historyStack = [];
+                    historyIndex = -1;
+                    pushToHistory(); // 保存初始状态
+                    redrawCanvas();
+                    renderLayerList();
+                    updateTransformPanelUI();
+                    drawTransformControls();
+                    alert('项目加载成功！');
+                } else {
+                    alert('项目文件格式无效，缺少 layers 字段');
+                }
+            } catch(err) {
+                alert('解析失败: ' + err.message);
+            }
+        });
         
         function generatePureDivCode() {
             if (shapes.length === 0) return `<!-- 无图形 -->\n<div style="position:relative; width:780px; height:520px;"></div>`;
@@ -1139,7 +1240,8 @@
         copyBtn.addEventListener('click', async () => { let code = document.getElementById('generatedCodePreview').innerText; if(code && !code.includes('无图形')) await navigator.clipboard.writeText(code); alert('代码已复制'); });
         exportImgBtn.addEventListener('click', () => { const link = document.createElement('a'); link.download = 'canvas_art.png'; link.href = canvas.toDataURL(); link.click(); });
         
-        saveToHistory();
+        // 初始保存历史
+        pushToHistory();
         redrawCanvas();
         setActiveTool('rect');
         renderLayerList();
